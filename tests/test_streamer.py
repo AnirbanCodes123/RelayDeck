@@ -129,7 +129,7 @@ def test_nvidia_stream_builds_nvenc_command(tmp_path: Path) -> None:
 
 @patch("app.streamer.shutil.which", side_effect=lambda name: f"/usr/bin/{name}")
 @patch("app.streamer.subprocess.run")
-def test_nvidia_status_accepts_nvenc_probe(
+def test_nvidia_status_uses_smi_and_encoder_list(
     run: MagicMock, _which: MagicMock
 ) -> None:
     from app import streamer
@@ -139,15 +139,14 @@ def test_nvidia_status_accepts_nvenc_probe(
     def fake_run(command, **_kwargs):
         result = MagicMock()
         result.returncode = 0
-        result.stdout = "NVIDIA L40\n" if command[0] == "nvidia-smi" else ""
         result.stderr = ""
+        if command[0].endswith("nvidia-smi"):
+            result.stdout = "NVIDIA L40\n"
+        else:
+            result.stdout = " V....D h264_nvenc           NVIDIA NVENC H.264 encoder\n"
         return result
 
     run.side_effect = fake_run
     status = streamer.nvidia_gpu_status()
     assert status["available"] is True
     assert status["name"] == "NVIDIA L40"
-    probe = next(call.args[0] for call in run.call_args_list if call.args[0][0] == "ffmpeg")
-    assert "256x256" in " ".join(probe)
-    assert "-nostdin" in probe
-    assert probe[probe.index("-frames:v") + 1] == "2"

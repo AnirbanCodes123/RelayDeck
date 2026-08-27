@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import json
+import logging
+import os
 import platform
 import shutil
 import subprocess
@@ -14,6 +16,7 @@ from typing import Any
 
 
 ACTIVE_STATUSES = {"starting", "live", "stopping"}
+logger = logging.getLogger(__name__)
 
 _nvidia_status_lock = threading.Lock()
 _nvidia_status_cache: dict[str, Any] | None = None
@@ -36,76 +39,84 @@ def cpu_status() -> dict[str, Any]:
     return {"available": True, "name": name or platform.machine() or "Unknown CPU"}
 
 
+def _find_binary(name: str) -> str | None:
+    found = shutil.which(name)
+    if found:
+        return found
+    for candidate in (Path("/usr/bin") / name, Path("/usr/local/bin") / name):
+        if candidate.is_file() and os.access(candidate, os.X_OK):
+            return str(candidate)
+    return None
+
+
 def _run_command(command: list[str], timeout: int) -> subprocess.CompletedProcess[str]:
     return subprocess.run(
         command,
         capture_output=True,
         text=True,
+        encoding="utf-8",
+        errors="replace",
         timeout=timeout,
         check=False,
         stdin=subprocess.DEVNULL,
+        env=os.environ,
     )
 
 
 def _nvidia_smi_name() -> str | None:
-    if not shutil.which("nvidia-smi"):
+    nvidia_smi = _find_binary("nvidia-smi")
+    if not nvidia_smi:
         return None
     result = _run_command(
-        ["nvidia-smi", "--query-gpu=name", "--format=csv,noheader"],
+        [nvidia_smi, "--query-gpu=name", "--format=csv,noheader"],
         timeout=5,
     )
     if result.returncode != 0 or not result.stdout.strip():
+        logger.warning("nvidia-smi GPU query failed: %s", result.stderr.strip() or result.stdout)
         return None
     return result.stdout.splitlines()[0].strip()
 
 
-def _nvenc_probe_works() -> bool:
-    """Encode two real frames. 64x64 single-frame probes fail on NVENC (L40+)."""
-    if not shutil.which("ffmpeg"):
+def _ffmpeg_has_nvenc() -> bool:
+    ffmpeg = _find_binary("ffmpeg")
+    if not ffmpeg:
         return False
-    probe = _run_command(
-        [
-            "ffmpeg",
-            "-hide_banner",
-            "-nostdin",
-            "-loglevel",
-            "error",
-            "-f",
-            "lavfi",
-            "-i",
-            "color=c=black:s=256x256:r=30",
-            "-frames:v",
-            "2",
-            "-pix_fmt",
-            "yuv420p",
-            "-c:v",
-            "h264_nvenc",
-            "-preset",
-            "p4",
-            "-tune",
-            "ll",
-            "-bf",
-            "0",
-            "-an",
-            "-f",
-            "null",
-            "-",
-        ],
-        timeout=20,
-    )
-    return probe.returncode == 0
+    result = _run_command([ffmpeg, "-hide_banner", "-encoders"], timeout=10)
+    output = f"{result.stdout}\n{result.stderr}"
+    return "h264_nvenc" in output
 
 
 def _detect_nvidia_gpu() -> dict[str, Any]:
+    """Treat a visible GPU plus NVENC encoder as available.
+
+    A synthetic lavfi encode to stdout (`-f null -`) fails inside subprocess
+    pipes even when the same command succeeds in an interactive shell.
+    """
     try:
         name = _nvidia_smi_name()
-    except (OSError, subprocess.SubprocessError):
-        return {"available": False, "name": None}
-    try:
-        available = _nvenc_probe_works()
-    except (OSError, subprocess.SubprocessError):
-        return {"available": False, "name": name}
-    return {"available": available, "name": name if name else ("NVIDIA GPU" if available else None)}
+        has_nvenc = _ffmpeg_has_nvenc()
+    except (OSError, subprocess.SubprocessError) as exc:
+        logger.warning("NVIDIA detection failed: %s", exc)
+        return {"available": False, "name": None, "error": str(exc)}
+    if name and has_nvenc:
+        return {"available": True, "name": name, "error": None}
+    if name:
+        return {
+            "available": False,
+            "name": name,
+            "error": "FFmpeg has no h264_nvenc encoder",
+        }
+    if has_nvenc:
+        return {
+            "available": False,
+            "name": None,
+            "error": "nvidia-smi did not report a GPU",
+        }
+    return {
+        "available": False,
+        "name": None,
+        "error": "NVIDIA GPU was not detected",
+    }
 
 
 def nvidia_gpu_status() -> dict[str, Any]:

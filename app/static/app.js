@@ -201,11 +201,14 @@ function renderSummary(data) {
   const gpu = data.services?.nvidia || {};
   cpuModel.textContent = data.services.cpu?.name || "CPU model unavailable";
   gpuModel.classList.toggle("unavailable", !gpu.available);
+  gpuModel.title = gpu.error || "";
   gpuModel.textContent = gpu.available
     ? gpu.name || "NVIDIA GPU"
-    : gpu.name
-      ? `${gpu.name} · NVENC unavailable`
-      : "Unavailable · streams fall back to CPU";
+    : gpu.error
+      ? gpu.error
+      : gpu.name
+        ? `${gpu.name} · NVENC unavailable`
+        : "Unavailable · streams fall back to CPU";
   if (gpu.available && !gpuDefaultApplied) {
     const nvidiaRadio = document.querySelector('input[name="engine"][value="nvidia"]');
     if (nvidiaRadio) nvidiaRadio.checked = true;
