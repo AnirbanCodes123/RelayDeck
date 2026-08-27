@@ -15,6 +15,9 @@ const serviceText = $("#serviceText");
 const toast = $("#toast");
 const queueTemplate = $("#queueItemTemplate");
 const streamTemplate = $("#streamItemTemplate");
+const liveUrlTemplate = $("#liveUrlItemTemplate");
+const liveUrlList = $("#liveUrlList");
+const copyAllUrlsButton = $("#copyAllUrlsButton");
 
 let queuedFiles = [];
 let streams = [];
@@ -119,6 +122,28 @@ function notify(message, isError = false) {
   toast.classList.toggle("error", isError);
   toast.classList.add("visible");
   toastTimer = setTimeout(() => toast.classList.remove("visible"), 3000);
+}
+
+function runningStreams() {
+  return streams.filter((stream) => ["live", "starting"].includes(stream.status));
+}
+
+async function copyText(value) {
+  try {
+    await navigator.clipboard.writeText(value);
+    return true;
+  } catch {
+    const field = document.createElement("textarea");
+    field.value = value;
+    field.setAttribute("readonly", "");
+    field.style.position = "fixed";
+    field.style.opacity = "0";
+    document.body.append(field);
+    field.select();
+    const ok = document.execCommand("copy");
+    field.remove();
+    return ok;
+  }
 }
 
 function addFiles(files) {
@@ -299,9 +324,9 @@ function renderStreams() {
     const toggle = node.querySelector(".stream-toggle");
     toggle.textContent = active ? "Stop" : "Start";
     toggle.disabled = stream.status === "stopping";
-    node.querySelector(".copy-stream").addEventListener("click", () => {
-      navigator.clipboard.writeText(stream.rtsp_url);
-      notify("RTSP URL copied.");
+    node.querySelector(".copy-stream").addEventListener("click", async () => {
+      if (await copyText(stream.rtsp_url)) notify("RTSP URL copied.");
+      else notify("Could not copy the RTSP URL.", true);
     });
     toggle.addEventListener("click", () =>
       streamAction(stream.id, active ? "stop" : "start"),
@@ -309,6 +334,43 @@ function renderStreams() {
     node.querySelector(".delete-button").addEventListener("click", () => deleteStream(stream));
     node.querySelector(".more-button").addEventListener("click", () => toggleDetails(node, stream));
     streamList.append(node);
+  }
+  renderLiveUrls();
+}
+
+function renderLiveUrls() {
+  const live = runningStreams();
+  $("#liveUrlCount").textContent = String(live.length);
+  $("#liveUrlHeading").textContent = `${live.length} running URL${live.length === 1 ? "" : "s"}`;
+  copyAllUrlsButton.disabled = live.length === 0;
+  liveUrlList.replaceChildren();
+  for (const stream of live) {
+    const node = liveUrlTemplate.content.firstElementChild.cloneNode(true);
+    node.querySelector("strong").textContent = stream.filename;
+    node.querySelector("small").textContent = stream.status;
+    node.querySelector("code").textContent = stream.rtsp_url;
+    node.querySelector(".copy-stream").addEventListener("click", async () => {
+      if (await copyText(stream.rtsp_url)) notify("RTSP URL copied.");
+      else notify("Could not copy the RTSP URL.", true);
+    });
+    liveUrlList.append(node);
+  }
+}
+
+function showWorkspaceTab(name) {
+  document.querySelectorAll(".workspace-tab").forEach((tab) => {
+    const active = tab.dataset.tab === name;
+    tab.classList.toggle("active", active);
+    tab.setAttribute("aria-selected", String(active));
+  });
+  document.querySelectorAll(".workspace-panel").forEach((panel) => {
+    panel.hidden = panel.dataset.panel !== name;
+  });
+  if (name === "urls" && window.location.hash !== "#urls") {
+    history.replaceState(null, "", "#urls");
+  }
+  if (name === "control" && window.location.hash === "#urls") {
+    history.replaceState(null, "", "#streams");
   }
 }
 
@@ -455,6 +517,25 @@ clearQueueButton.addEventListener("click", () => {
   }
 });
 searchInput.addEventListener("input", renderStreams);
+document.querySelectorAll(".workspace-tab").forEach((tab) => {
+  tab.addEventListener("click", () => showWorkspaceTab(tab.dataset.tab));
+});
+copyAllUrlsButton.addEventListener("click", async () => {
+  const urls = runningStreams().map((stream) => stream.rtsp_url);
+  if (!urls.length) {
+    notify("There are no running RTSP URLs to copy.", true);
+    return;
+  }
+  if (await copyText(urls.join("\n"))) {
+    notify(`Copied ${urls.length} running RTSP URL${urls.length === 1 ? "" : "s"}.`);
+  } else {
+    notify("Could not copy the RTSP URLs.", true);
+  }
+});
+window.addEventListener("hashchange", () => {
+  if (window.location.hash === "#urls") showWorkspaceTab("urls");
+});
+if (window.location.hash === "#urls") showWorkspaceTab("urls");
 $("#startAllButton").addEventListener("click", async () => {
   try {
     await apiAction("/api/streams/actions/start-all");

@@ -14,8 +14,8 @@
       href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=Manrope:wght@400;500;600;700&display=swap"
       rel="stylesheet"
     />
-    <link rel="stylesheet" href="/static/styles.css?v=4" />
-    <script src="/static/app.js?v=4" defer></script>
+    <link rel="stylesheet" href="/static/styles.css?v=5" />
+    <script src="/static/app.js?v=5" defer></script>
   </head>
   <body>
     <div class="ambient ambient-one"></div>
@@ -31,6 +31,7 @@
       <nav>
         <a href="#publish">Publish</a>
         <a href="#streams">Streams</a>
+        <a href="#urls">Live URLs</a>
       </nav>
       <div class="service-pill" id="servicePill">
         <span class="status-dot"></span>
@@ -198,6 +199,29 @@
           </div>
         </div>
 
+        <div class="workspace-tabs" role="tablist" aria-label="Stream workspace">
+          <button
+            class="workspace-tab active"
+            type="button"
+            role="tab"
+            data-tab="control"
+            aria-selected="true"
+          >
+            Control room
+          </button>
+          <button
+            class="workspace-tab"
+            type="button"
+            role="tab"
+            data-tab="urls"
+            aria-selected="false"
+          >
+            Live RTSP URLs
+            <em id="liveUrlCount">0</em>
+          </button>
+        </div>
+
+        <div class="workspace-panel" data-panel="control" id="controlPanel">
         <div class="stream-toolbar">
           <label class="search-box">
             <svg viewBox="0 0 24 24" aria-hidden="true">
@@ -222,6 +246,29 @@
           <div class="empty-mark"><i></i><i></i><i></i></div>
           <strong>No streams configured</strong>
           <span>Add local videos above to create your RTSP channels.</span>
+        </div>
+        </div>
+
+        <div class="workspace-panel" data-panel="urls" id="urlsPanel" hidden>
+          <div class="url-toolbar">
+            <div>
+              <strong id="liveUrlHeading">0 running URLs</strong>
+              <span>Only live and starting publishers are listed</span>
+            </div>
+            <button class="primary-button" id="copyAllUrlsButton" type="button" disabled>
+              <svg viewBox="0 0 24 24" aria-hidden="true">
+                <rect x="8" y="8" width="11" height="11" rx="2"/>
+                <path d="M16 8V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h2"/>
+              </svg>
+              <span>Copy all running URLs</span>
+            </button>
+          </div>
+          <div class="live-url-list" id="liveUrlList"></div>
+          <div class="empty-state" id="liveUrlEmpty">
+            <div class="empty-mark"><i></i><i></i><i></i></div>
+            <strong>No running RTSP URLs</strong>
+            <span>Start a stream to collect its endpoint here.</span>
+          </div>
         </div>
       </section>
 
@@ -282,6 +329,19 @@
           <div class="error-detail"></div>
           <pre>Loading logs…</pre>
         </div>
+      </article>
+    </template>
+
+    <template id="liveUrlItemTemplate">
+      <article class="live-url-row">
+        <div>
+          <strong></strong>
+          <small></small>
+        </div>
+        <code></code>
+        <button class="copy-stream icon-button" type="button" title="Copy URL">
+          <svg viewBox="0 0 24 24"><rect x="8" y="8" width="11" height="11" rx="2"/><path d="M16 8V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h2"/></svg>
+        </button>
       </article>
     </template>
   </body>
