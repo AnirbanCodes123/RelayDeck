@@ -14,8 +14,8 @@
       href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=Manrope:wght@400;500;600;700&display=swap"
       rel="stylesheet"
     />
-    <link rel="stylesheet" href="/static/styles.css?v=3" />
-    <script src="/static/app.js?v=3" defer></script>
+    <link rel="stylesheet" href="/static/styles.css?v=4" />
+    <script src="/static/app.js?v=4" defer></script>
   </head>
   <body>
     <div class="ambient ambient-one"></div>
@@ -61,6 +61,48 @@
         <div>
           <span>Capacity</span>
           <strong><b id="capacityUsed">0</b><small id="capacityMax"> / 80</small></strong>
+        </div>
+      </section>
+
+      <section class="host-monitor" aria-label="Live host resource monitor">
+        <div class="host-monitor-head">
+          <span>Live host monitor</span>
+          <small id="metricsStamp">Connecting…</small>
+        </div>
+        <div class="host-monitor-grid">
+          <article class="meter" id="cpuMeter" data-metric="cpu">
+            <div class="meter-top">
+              <span>CPU</span>
+              <strong id="cpuPercent">—</strong>
+            </div>
+            <div class="meter-bar" aria-hidden="true"><i id="cpuBar"></i></div>
+            <div class="meter-foot">
+              <small id="cpuDetail">Sampling…</small>
+              <span id="cpuSpark" class="spark-wrap"></span>
+            </div>
+          </article>
+          <article class="meter" id="ramMeter" data-metric="ram">
+            <div class="meter-top">
+              <span>RAM</span>
+              <strong id="ramPercent">—</strong>
+            </div>
+            <div class="meter-bar" aria-hidden="true"><i id="ramBar"></i></div>
+            <div class="meter-foot">
+              <small id="ramDetail">Sampling…</small>
+              <span id="ramSpark" class="spark-wrap"></span>
+            </div>
+          </article>
+          <article class="meter" id="gpuMeter" data-metric="gpu">
+            <div class="meter-top">
+              <span>GPU</span>
+              <strong id="gpuPercent">—</strong>
+            </div>
+            <div class="meter-bar" aria-hidden="true"><i id="gpuBar"></i></div>
+            <div class="meter-foot">
+              <small id="gpuDetail">Sampling…</small>
+              <span id="gpuSpark" class="spark-wrap"></span>
+            </div>
+          </article>
         </div>
       </section>
 

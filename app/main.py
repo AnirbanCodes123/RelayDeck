@@ -22,6 +22,7 @@ from app.streamer import (
     probe_processing_mode,
     resolve_processing_mode,
 )
+from app.metrics import monitor as host_monitor
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 STATIC_DIR = BASE_DIR / "app" / "static"
@@ -67,9 +68,11 @@ async def lifespan(_: FastAPI):
                 record["processing_mode"],
             )
     restore_task = asyncio.create_task(_restore_desired_streams())
+    host_monitor.start()
     await asyncio.to_thread(nvidia_gpu_status)
     yield
     restore_task.cancel()
+    host_monitor.stop()
     manager.shutdown()
 
 
@@ -304,3 +307,8 @@ async def health() -> dict:
         **current_services,
         "aggregate": manager.aggregate(),
     }
+
+
+@app.get("/api/metrics")
+async def host_metrics() -> dict:
+    return host_monitor.snapshot()

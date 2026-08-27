@@ -21,6 +21,9 @@ let streams = [];
 let uploading = false;
 let toastTimer;
 let gpuDefaultApplied = false;
+let metricsInFlight = false;
+const METRIC_HISTORY = 40;
+const metricHistory = { cpu: [], ram: [], gpu: [] };
 
 function slugify(filename) {
   return filename
@@ -58,6 +61,56 @@ function formatUptime(seconds = 0) {
   const minutes = String(Math.floor((seconds % 3600) / 60)).padStart(2, "0");
   const remaining = String(seconds % 60).padStart(2, "0");
   return `${hours}:${minutes}:${remaining}`;
+}
+
+function formatGiB(bytes) {
+  if (bytes == null) return "—";
+  return `${(bytes / 1024 ** 3).toFixed(1)} GiB`;
+}
+
+function loadLevel(percent) {
+  if (percent == null) return "off";
+  if (percent >= 85) return "hot";
+  if (percent >= 70) return "warm";
+  return "ok";
+}
+
+function pushHistory(key, value) {
+  const series = metricHistory[key];
+  series.push(value == null ? null : Number(value));
+  if (series.length > METRIC_HISTORY) series.shift();
+}
+
+function sparkline(values) {
+  const usable = values.filter((value) => value != null);
+  if (usable.length < 2) return "";
+  const width = 72;
+  const height = 24;
+  const points = values
+    .map((value, index) => {
+      if (value == null) return null;
+      const x = (index / Math.max(1, values.length - 1)) * width;
+      const y = height - (Math.min(100, Math.max(0, value)) / 100) * height;
+      return `${x.toFixed(1)},${y.toFixed(1)}`;
+    })
+    .filter(Boolean)
+    .join(" ");
+  return `<svg viewBox="0 0 ${width} ${height}" aria-hidden="true"><polyline points="${points}" /></svg>`;
+}
+
+function renderMeter(prefix, percent, detail, available = true) {
+  const meter = $(`#${prefix}Meter`);
+  const bar = $(`#${prefix}Bar`);
+  const label = $(`#${prefix}Percent`);
+  const footnote = $(`#${prefix}Detail`);
+  const spark = $(`#${prefix}Spark`);
+  const shown = available ? percent : null;
+  meter.classList.remove("load-ok", "load-warm", "load-hot", "load-off");
+  meter.classList.add(`load-${loadLevel(shown)}`);
+  label.textContent = shown == null ? "—" : `${Math.round(shown)}%`;
+  bar.style.width = `${shown == null ? 0 : Math.min(100, Math.max(0, shown))}%`;
+  footnote.textContent = detail;
+  spark.innerHTML = sparkline(metricHistory[prefix]);
 }
 
 function notify(message, isError = false) {
@@ -322,6 +375,61 @@ async function refreshStreams() {
   }
 }
 
+function renderHostMetrics(data) {
+  const stamp = $("#metricsStamp");
+  stamp.textContent = "Live";
+  stamp.classList.remove("stale");
+  const cpu = data.cpu || {};
+  const memory = data.memory || {};
+  const gpu = data.gpu || {};
+  pushHistory("cpu", cpu.percent);
+  pushHistory("ram", memory.percent);
+  pushHistory("gpu", gpu.available ? gpu.percent : null);
+
+  const cpuDetail = [
+    cpu.cores ? `${cpu.cores} cores` : null,
+    cpu.load1 != null ? `load ${cpu.load1}` : null,
+  ]
+    .filter(Boolean)
+    .join(" · ") || "Sampling…";
+  renderMeter("cpu", cpu.percent, cpuDetail, cpu.percent != null);
+
+  const ramDetail =
+    memory.used_bytes != null && memory.total_bytes
+      ? `${formatGiB(memory.used_bytes)} / ${formatGiB(memory.total_bytes)}`
+      : "Memory unavailable";
+  renderMeter("ram", memory.percent, ramDetail, memory.percent != null);
+
+  let gpuDetail = "GPU unavailable";
+  if (gpu.available) {
+    gpuDetail = [
+      gpu.name,
+      gpu.memory_used_bytes != null && gpu.memory_total_bytes
+        ? `${formatGiB(gpu.memory_used_bytes)} / ${formatGiB(gpu.memory_total_bytes)}`
+        : null,
+      gpu.temperature_c != null ? `${gpu.temperature_c}°C` : null,
+    ]
+      .filter(Boolean)
+      .join(" · ");
+  }
+  renderMeter("gpu", gpu.percent, gpuDetail, Boolean(gpu.available));
+}
+
+async function refreshMetrics() {
+  if (metricsInFlight) return;
+  metricsInFlight = true;
+  try {
+    const response = await fetch("/api/metrics", { cache: "no-store" });
+    if (!response.ok) throw new Error("metrics failed");
+    renderHostMetrics(await response.json());
+  } catch {
+    $("#metricsStamp").textContent = "Offline";
+    $("#metricsStamp").classList.add("stale");
+  } finally {
+    metricsInFlight = false;
+  }
+}
+
 videoInput.addEventListener("change", () => {
   addFiles(videoInput.files);
   videoInput.value = "";
@@ -368,6 +476,8 @@ $("#stopAllButton").addEventListener("click", async () => {
 
 renderQueue();
 refreshStreams();
+refreshMetrics();
 setInterval(() => {
   if (!uploading) refreshStreams();
 }, 3000);
+setInterval(refreshMetrics, 1000);

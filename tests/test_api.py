@@ -24,6 +24,18 @@ def test_list_endpoint_returns_aggregate(monkeypatch, tmp_path: Path) -> None:
     assert response.json()["aggregate"]["capacity"] == 2
 
 
+def test_metrics_endpoint_returns_host_snapshot(monkeypatch, tmp_path: Path) -> None:
+    configure_test_runtime(monkeypatch, tmp_path)
+    with TestClient(main.app) as client:
+        response = client.get("/api/metrics")
+    assert response.status_code == 200
+    payload = response.json()
+    assert "cpu" in payload
+    assert "memory" in payload
+    assert "gpu" in payload
+    assert "percent" in payload["cpu"]
+
+
 def test_upload_rejects_invalid_endpoint(monkeypatch, tmp_path: Path) -> None:
     configure_test_runtime(monkeypatch, tmp_path)
     with TestClient(main.app) as client:
