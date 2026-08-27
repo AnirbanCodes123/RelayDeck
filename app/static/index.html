@@ -1,0 +1,246 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta
+      name="description"
+      content="Publish local video files as standards-compatible RTSP streams."
+    />
+    <title>RelayDeck — Multi-stream RTSP Router</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=Manrope:wght@400;500;600;700&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="/static/styles.css" />
+    <script src="/static/app.js" defer></script>
+  </head>
+  <body>
+    <div class="ambient ambient-one"></div>
+    <div class="ambient ambient-two"></div>
+
+    <header class="topbar">
+      <a class="brand" href="/" aria-label="RelayDeck home">
+        <span class="brand-mark">
+          <span></span><span></span><span></span>
+        </span>
+        <span>RelayDeck</span>
+      </a>
+      <nav>
+        <a href="#publish">Publish</a>
+        <a href="#streams">Streams</a>
+      </nav>
+      <div class="service-pill" id="servicePill">
+        <span class="status-dot"></span>
+        <span id="serviceText">Checking media router</span>
+      </div>
+    </header>
+
+    <main>
+      <section class="hero">
+        <div>
+          <div class="eyebrow"><span>MULTI-STREAM ROUTER</span><i></i><span>80 CHANNELS</span></div>
+          <h1>Your local videos, <em>broadcast at scale.</em></h1>
+          <p>
+            Publish a library of local media as independent RTSP camera feeds.
+            RelayDeck automatically stream-copies compatible files to conserve CPU.
+          </p>
+        </div>
+        <div class="hero-signal" aria-hidden="true">
+          <span></span><span></span><span></span><span></span>
+          <strong>RTSP</strong>
+        </div>
+      </section>
+
+      <section class="stats" aria-label="Stream summary">
+        <div><span>Configured</span><strong id="totalMetric">0</strong></div>
+        <div><span>Live now</span><strong id="liveMetric">0</strong></div>
+        <div><span>Attention</span><strong id="errorMetric">0</strong></div>
+        <div>
+          <span>Capacity</span>
+          <strong><b id="capacityUsed">0</b><small id="capacityMax"> / 80</small></strong>
+        </div>
+      </section>
+
+      <section class="publish-card" id="publish">
+        <div class="section-heading">
+          <div>
+            <span class="step-number">01</span>
+            <div>
+              <h2>Add video sources</h2>
+              <p>Select several files and publish them in a controlled upload queue.</p>
+            </div>
+          </div>
+          <span class="panel-kicker">3 PARALLEL UPLOADS</span>
+        </div>
+
+        <label class="dropzone" id="dropzone" for="videoInput">
+          <input
+            id="videoInput"
+            type="file"
+            accept="video/*,.mkv,.ts,.m4v"
+            multiple
+          />
+          <span class="upload-icon">
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <path d="M12 16V4m0 0L7 9m5-5 5 5M5 15v4h14v-4" />
+            </svg>
+          </span>
+          <span>
+            <strong>Drop multiple videos here</strong>
+            <small>MP4, MKV, MOV, AVI, WebM, MPEG and TS · up to 80 sources</small>
+          </span>
+          <b>Browse files</b>
+        </label>
+
+        <div class="queue-section" id="queueSection" hidden>
+          <div class="queue-toolbar">
+            <div>
+              <strong id="queueCount">0 files ready</strong>
+              <span>Review endpoint names before publishing</span>
+            </div>
+            <div class="queue-options">
+              <fieldset class="processor-choice">
+                <legend>Processing device</legend>
+                <label>
+                  <input type="radio" name="engine" value="cpu" checked />
+                  <span>
+                    <b>CPU</b>
+                    <small id="cpuModel">Detecting CPU…</small>
+                  </span>
+                </label>
+                <label>
+                  <input type="radio" name="engine" value="nvidia" />
+                  <span>
+                    <b>NVIDIA GPU</b>
+                    <small id="gpuModel">Checking GPU…</small>
+                  </span>
+                </label>
+              </fieldset>
+              <label class="loop-check">
+                <input id="loopAll" type="checkbox" checked />
+                <span>
+                  <strong>Loop continuously</strong>
+                  <small>Keep streaming until manually stopped</small>
+                </span>
+              </label>
+            </div>
+          </div>
+          <div class="upload-queue" id="uploadQueue"></div>
+          <div class="queue-footer">
+            <button class="text-button" id="clearQueueButton" type="button">Clear queue</button>
+            <button class="primary-button" id="uploadAllButton" type="button">
+              <svg viewBox="0 0 24 24" aria-hidden="true">
+                <path d="m9 7 8 5-8 5V7Z" />
+              </svg>
+              <span>Publish all streams</span>
+            </button>
+          </div>
+        </div>
+      </section>
+
+      <section class="streams-section" id="streams">
+        <div class="section-heading">
+          <div>
+            <span class="step-number">02</span>
+            <div>
+              <h2>Stream control room</h2>
+              <p>Monitor and control every FFmpeg publisher from one place.</p>
+            </div>
+          </div>
+          <div class="bulk-actions">
+            <button id="startAllButton" type="button">Start all</button>
+            <button id="stopAllButton" type="button">Stop all</button>
+          </div>
+        </div>
+
+        <div class="stream-toolbar">
+          <label class="search-box">
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <circle cx="11" cy="11" r="7"></circle>
+              <path d="m16 16 4 4"></path>
+            </svg>
+            <input id="searchInput" type="search" placeholder="Search files or endpoints…" />
+          </label>
+          <span id="visibleCount">0 streams</span>
+        </div>
+
+        <div class="stream-list-head">
+          <span>Source</span>
+          <span>RTSP endpoint</span>
+          <span>Mode</span>
+          <span>Status</span>
+          <span>Uptime</span>
+          <span></span>
+        </div>
+        <div class="stream-list" id="streamList"></div>
+        <div class="empty-state" id="emptyState">
+          <div class="empty-mark"><i></i><i></i><i></i></div>
+          <strong>No streams configured</strong>
+          <span>Add local videos above to create your RTSP channels.</span>
+        </div>
+      </section>
+
+      <section class="consumer-strip">
+        <span>ROUTE TO</span>
+        <div>
+          <strong>VLC</strong><i></i><strong>FFplay</strong><i></i><strong>Frigate</strong
+          ><i></i><strong>OpenCV</strong><i></i><strong>VMS / NVR</strong>
+        </div>
+      </section>
+    </main>
+
+    <footer>
+      <span>RelayDeck media router</span>
+      <span>FFmpeg pool → MediaMTX → RTSP consumers</span>
+    </footer>
+
+    <div class="toast" id="toast" role="status"></div>
+
+    <template id="queueItemTemplate">
+      <div class="queue-item">
+        <div class="file-type">VID</div>
+        <div class="queue-file">
+          <strong></strong>
+          <span></span>
+        </div>
+        <label>
+          <span>rtsp://localhost:8554/</span>
+          <input maxlength="64" />
+        </label>
+        <em class="queue-status">Ready</em>
+        <button class="icon-button remove-queue" type="button" title="Remove">×</button>
+      </div>
+    </template>
+
+    <template id="streamItemTemplate">
+      <article class="stream-row">
+        <div class="source-cell">
+          <span class="stream-indicator"><i></i></span>
+          <div><strong></strong><small></small></div>
+        </div>
+        <div class="endpoint-cell">
+          <code></code>
+          <button class="copy-stream icon-button" type="button" title="Copy URL">
+            <svg viewBox="0 0 24 24"><rect x="8" y="8" width="11" height="11" rx="2"/><path d="M16 8V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h2"/></svg>
+          </button>
+        </div>
+        <span class="mode-badge"></span>
+        <span class="state-badge"><i></i><b></b></span>
+        <code class="uptime-cell"></code>
+        <div class="row-actions">
+          <button class="stream-toggle" type="button"></button>
+          <button class="more-button" type="button" title="Show details">•••</button>
+          <button class="delete-button" type="button" title="Delete">×</button>
+        </div>
+        <div class="stream-details" hidden>
+          <div><span>Processing</span><strong></strong></div>
+          <div class="error-detail"></div>
+          <pre>Loading logs…</pre>
+        </div>
+      </article>
+    </template>
+  </body>
+</html>

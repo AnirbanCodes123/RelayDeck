@@ -1,0 +1,15 @@
+logLevel: info
+writeQueueSize: 2048
+
+rtsp: yes
+rtspAddress: :8554
+rtspTransports: [tcp]
+
+api: yes
+apiAddress: :9997
+
+pathDefaults:
+  source: publisher
+
+paths:
+  all_others:
