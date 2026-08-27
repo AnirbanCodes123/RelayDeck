@@ -20,6 +20,7 @@ let queuedFiles = [];
 let streams = [];
 let uploading = false;
 let toastTimer;
+let gpuDefaultApplied = false;
 
 function slugify(filename) {
   return filename
@@ -197,12 +198,19 @@ function renderSummary(data) {
     : !data.services.ffmpeg
       ? "FFmpeg unavailable"
       : "MediaMTX offline";
-  const gpu = data.services.nvidia;
+  const gpu = data.services?.nvidia || {};
   cpuModel.textContent = data.services.cpu?.name || "CPU model unavailable";
   gpuModel.classList.toggle("unavailable", !gpu.available);
   gpuModel.textContent = gpu.available
     ? gpu.name || "NVIDIA GPU"
-    : "Unavailable · streams fall back to CPU";
+    : gpu.name
+      ? `${gpu.name} · NVENC unavailable`
+      : "Unavailable · streams fall back to CPU";
+  if (gpu.available && !gpuDefaultApplied) {
+    const nvidiaRadio = document.querySelector('input[name="engine"][value="nvidia"]');
+    if (nvidiaRadio) nvidiaRadio.checked = true;
+    gpuDefaultApplied = true;
+  }
 }
 
 function renderStreams() {

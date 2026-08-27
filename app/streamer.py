@@ -15,6 +15,9 @@ from typing import Any
 
 ACTIVE_STATUSES = {"starting", "live", "stopping"}
 
+_nvidia_status_lock = threading.Lock()
+_nvidia_status_cache: dict[str, Any] | None = None
+
 
 @lru_cache(maxsize=1)
 def cpu_status() -> dict[str, Any]:
@@ -33,55 +36,88 @@ def cpu_status() -> dict[str, Any]:
     return {"available": True, "name": name or platform.machine() or "Unknown CPU"}
 
 
-@lru_cache(maxsize=1)
-def nvidia_gpu_status() -> dict[str, Any]:
-    """Test that FFmpeg can open NVENC, not merely that the encoder is listed."""
+def _run_command(command: list[str], timeout: int) -> subprocess.CompletedProcess[str]:
+    return subprocess.run(
+        command,
+        capture_output=True,
+        text=True,
+        timeout=timeout,
+        check=False,
+        stdin=subprocess.DEVNULL,
+    )
+
+
+def _nvidia_smi_name() -> str | None:
+    if not shutil.which("nvidia-smi"):
+        return None
+    result = _run_command(
+        ["nvidia-smi", "--query-gpu=name", "--format=csv,noheader"],
+        timeout=5,
+    )
+    if result.returncode != 0 or not result.stdout.strip():
+        return None
+    return result.stdout.splitlines()[0].strip()
+
+
+def _nvenc_probe_works() -> bool:
+    """Encode two real frames. 64x64 single-frame probes fail on NVENC (L40+)."""
     if not shutil.which("ffmpeg"):
-        return {"available": False, "name": None}
+        return False
+    probe = _run_command(
+        [
+            "ffmpeg",
+            "-hide_banner",
+            "-nostdin",
+            "-loglevel",
+            "error",
+            "-f",
+            "lavfi",
+            "-i",
+            "color=c=black:s=256x256:r=30",
+            "-frames:v",
+            "2",
+            "-pix_fmt",
+            "yuv420p",
+            "-c:v",
+            "h264_nvenc",
+            "-preset",
+            "p4",
+            "-tune",
+            "ll",
+            "-bf",
+            "0",
+            "-an",
+            "-f",
+            "null",
+            "-",
+        ],
+        timeout=20,
+    )
+    return probe.returncode == 0
+
+
+def _detect_nvidia_gpu() -> dict[str, Any]:
     try:
-        probe = subprocess.run(
-            [
-                "ffmpeg",
-                "-hide_banner",
-                "-loglevel",
-                "error",
-                "-f",
-                "lavfi",
-                "-i",
-                "color=size=64x64:rate=1",
-                "-frames:v",
-                "1",
-                "-c:v",
-                "h264_nvenc",
-                "-f",
-                "null",
-                "-",
-            ],
-            capture_output=True,
-            text=True,
-            timeout=10,
-            check=False,
-        )
-        if probe.returncode != 0:
-            return {"available": False, "name": None}
-        name = "NVIDIA GPU"
-        if shutil.which("nvidia-smi"):
-            gpu_name = subprocess.run(
-                [
-                    "nvidia-smi",
-                    "--query-gpu=name",
-                    "--format=csv,noheader",
-                ],
-                capture_output=True,
-                text=True,
-                timeout=5,
-                check=False,
-            )
-            if gpu_name.returncode == 0 and gpu_name.stdout.strip():
-                name = gpu_name.stdout.splitlines()[0].strip()
-        return {"available": True, "name": name}
+        name = _nvidia_smi_name()
     except (OSError, subprocess.SubprocessError):
         return {"available": False, "name": None}
+    try:
+        available = _nvenc_probe_works()
+    except (OSError, subprocess.SubprocessError):
+        return {"available": False, "name": name}
+    return {"available": available, "name": name if name else ("NVIDIA GPU" if available else None)}
+
+
+def nvidia_gpu_status() -> dict[str, Any]:
+    """Return cached NVENC status. Successful probes are reused; failures retry."""
+    global _nvidia_status_cache
+    with _nvidia_status_lock:
+        if _nvidia_status_cache is not None and _nvidia_status_cache.get("available"):
+            return dict(_nvidia_status_cache)
+        detected = _detect_nvidia_gpu()
+        if detected["available"]:
+            _nvidia_status_cache = detected
+        return dict(detected)
 
 
 def resolve_processing_mode(media_mode: str, requested_engine: str) -> str:
@@ -112,6 +148,7 @@ def probe_processing_mode(video_path: Path) -> str:
             text=True,
             timeout=30,
             check=True,
+            stdin=subprocess.DEVNULL,
         )
         streams = json.loads(result.stdout).get("streams", [])
     except (OSError, subprocess.SubprocessError, json.JSONDecodeError) as exc:
@@ -222,6 +259,7 @@ class StreamManager:
             try:
                 process = subprocess.Popen(
                     command,
+                    stdin=subprocess.DEVNULL,
                     stdout=subprocess.DEVNULL,
                     stderr=subprocess.PIPE,
                     text=True,
@@ -254,6 +292,7 @@ class StreamManager:
         command = [
             "ffmpeg",
             "-hide_banner",
+            "-nostdin",
             "-loglevel",
             "warning",
             "-fflags",

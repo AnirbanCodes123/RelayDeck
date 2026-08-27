@@ -129,9 +129,9 @@ h2 { margin: 0 0 4px; font-size: 18px; letter-spacing: -.035em; }
 .processor-choice input { position: absolute; opacity: 0; pointer-events: none; }
 .processor-choice label > span { min-width: 118px; padding: 8px 10px; display: flex; flex-direction: column; gap: 3px; color: #69727f; background: white; border: 1px solid var(--line); border-radius: 7px; transition: 150ms; }
 .processor-choice b { font: 600 9px var(--mono); }
-.processor-choice small { display: none; max-width: 190px; overflow: hidden; color: #8d95a1; font: 8px var(--mono); text-overflow: ellipsis; white-space: nowrap; }
+.processor-choice small { display: block; max-width: 190px; overflow: hidden; color: #8d95a1; font: 8px var(--mono); text-overflow: ellipsis; white-space: nowrap; }
 .processor-choice input:checked + span { color: var(--orange); border-color: #ff9f88; background: #fff7f5; box-shadow: 0 0 0 2px rgba(255,91,53,.07); }
-.processor-choice input:checked + span small { display: block; color: #66707e; }
+.processor-choice input:checked + span small { color: #66707e; }
 .processor-choice input:focus-visible + span { outline: 2px solid var(--orange); outline-offset: 2px; }
 .processor-choice small.unavailable { color: var(--red) !important; }
 .loop-check { display: flex; align-items: center; gap: 9px; color: #626c79; cursor: pointer; }

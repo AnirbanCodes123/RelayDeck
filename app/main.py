@@ -67,6 +67,7 @@ async def lifespan(_: FastAPI):
                 record["processing_mode"],
             )
     restore_task = asyncio.create_task(_restore_desired_streams())
+    await asyncio.to_thread(nvidia_gpu_status)
     yield
     restore_task.cancel()
     manager.shutdown()
@@ -133,7 +134,7 @@ async def stream_status() -> dict:
     return {
         "streams": manager.list(),
         "aggregate": manager.aggregate(),
-        "services": services(),
+        "services": await asyncio.to_thread(services),
     }
 
 
