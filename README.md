@@ -8,9 +8,14 @@ Frigate, FFplay, OpenCV, VMS/NVR software, and custom AI applications.
 
 Docker Desktop or Docker Engine with Compose is required.
 
+CPU-only (macOS, machines without NVIDIA):
+
 ```bash
 docker compose up --build
 ```
+
+NVIDIA GPU server (requires the host NVIDIA driver and NVIDIA Container Toolkit):
+
 ```bash
 docker compose -f docker-compose.yml -f docker-compose.gpu.yml up -d --build
 ```
@@ -42,10 +47,23 @@ waste CPU or GPU resources. Other formats can use NVIDIA NVENC for H.264
 encoding.
 
 On an NVIDIA host, install the NVIDIA driver and NVIDIA Container Toolkit, then
-start RelayDeck with the GPU override:
+start RelayDeck with both Compose files so the portal container receives the GPU:
 
 ```bash
-docker compose -f docker-compose.yml -f docker-compose.gpu.yml up --build
+docker compose -f docker-compose.yml -f docker-compose.gpu.yml up -d --build
+```
+
+The portal image ships FFmpeg with NVENC. CUDA is not a separate Compose
+service: the NVIDIA Container Toolkit injects the host driver (`libcuda`,
+NVENC, `nvidia-smi`) into the container. `docker compose up` without
+`docker-compose.gpu.yml` never attaches the GPU, so the portal will report
+NVIDIA as unavailable.
+
+Confirm the GPU is visible inside the container:
+
+```bash
+docker compose -f docker-compose.yml -f docker-compose.gpu.yml exec portal nvidia-smi
+docker compose -f docker-compose.yml -f docker-compose.gpu.yml exec portal ffmpeg -hide_banner -encoders | grep nvenc
 ```
 
 RelayDeck performs a real one-frame NVENC test and reports the detected GPU in
