@@ -11,6 +11,9 @@ Docker Desktop or Docker Engine with Compose is required.
 ```bash
 docker compose up --build
 ```
+```bash
+docker compose -f docker-compose.yml -f docker-compose.gpu.yml up -d --build
+```
 
 Open [http://localhost:9009](http://localhost:9009). Select multiple videos,
 review their generated endpoint names, then publish them. Every stream gets a
