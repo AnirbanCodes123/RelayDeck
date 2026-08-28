@@ -8,7 +8,7 @@ ARG TARGETARCH=amd64
 ARG JELLYFIN_FFMPEG_VERSION=7.1.4-3
 
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends ca-certificates curl \
+    && apt-get install -y --no-install-recommends ca-certificates curl iproute2 util-linux \
     && curl -fsSL -o /tmp/jellyfin-ffmpeg.deb \
         "https://github.com/jellyfin/jellyfin-ffmpeg/releases/download/v${JELLYFIN_FFMPEG_VERSION}/jellyfin-ffmpeg7_${JELLYFIN_FFMPEG_VERSION}-bookworm_${TARGETARCH}.deb" \
     && apt-get install -y --no-install-recommends /tmp/jellyfin-ffmpeg.deb \

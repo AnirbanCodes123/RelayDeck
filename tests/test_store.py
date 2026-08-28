@@ -31,3 +31,18 @@ def test_store_persists_and_updates_streams(tmp_path: Path) -> None:
     deleted = reopened.delete("stream-id")
     assert deleted["id"] == "stream-id"
     assert reopened.list() == []
+
+
+def test_store_delete_all_removes_every_stream(tmp_path: Path) -> None:
+    database = tmp_path / "relaydeck.db"
+    store = StreamStore(database)
+    store.initialize()
+    first = tmp_path / "one.mp4"
+    second = tmp_path / "two.mp4"
+    first.touch()
+    second.touch()
+    store.create("one", "one.mp4", first, "camera1", True, "copy")
+    store.create("two", "two.mp4", second, "camera2", True, "nvidia")
+    removed = store.delete_all()
+    assert len(removed) == 2
+    assert store.list() == []

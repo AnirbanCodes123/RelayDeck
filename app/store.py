@@ -99,6 +99,12 @@ class StreamStore:
             connection.execute("DELETE FROM streams WHERE id = ?", (stream_id,))
         return record
 
+    def delete_all(self) -> list[dict[str, Any]]:
+        records = self.list()
+        with self._connect() as connection:
+            connection.execute("DELETE FROM streams")
+        return records
+
     def _connect(self) -> sqlite3.Connection:
         connection = sqlite3.connect(self.database_path, timeout=10)
         connection.row_factory = sqlite3.Row

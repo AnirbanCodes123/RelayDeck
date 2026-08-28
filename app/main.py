@@ -204,11 +204,7 @@ async def start_stream(
         processing_mode = await asyncio.to_thread(
             resolve_processing_mode, media_mode, transcode_engine
         )
-        gpu_fallback = (
-            media_mode == "transcode"
-            and transcode_engine == "nvidia"
-            and processing_mode == "cpu"
-        )
+        gpu_fallback = transcode_engine == "nvidia" and processing_mode != "nvidia"
         state = manager.register(
             stream_id,
             destination,
@@ -297,6 +293,19 @@ async def stop_all_streams() -> dict:
     store.set_all_desired_running(False)
     await asyncio.to_thread(manager.stop_all)
     return await stream_status()
+
+
+@app.post("/api/streams/actions/clear-all")
+async def clear_all_streams() -> dict:
+    streams = await asyncio.to_thread(manager.unregister_all)
+    records = store.delete_all()
+    paths = {str(stream.video_path) for stream in streams}
+    paths.update(record["video_path"] for record in records)
+    for raw_path in paths:
+        Path(raw_path).unlink(missing_ok=True)
+    status = await stream_status()
+    status["deleted"] = len(records)
+    return status
 
 
 @app.get("/api/health")

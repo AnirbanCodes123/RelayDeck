@@ -15,7 +15,6 @@ services:
 
   portal:
     build: .
-    init: true
     restart: unless-stopped
     stop_grace_period: 20s
     depends_on:
@@ -28,10 +27,19 @@ services:
       RTSP_PUBLIC_HOST: localhost
       DATA_DIR: /app/data
       MAX_STREAMS: "80"
+      EDGE_AGENT_PORT: "9000"
+      HOST_PROC: /host/proc
+    pid: "host"
+    cap_add:
+      - SYS_PTRACE
+      - SYS_ADMIN
+    security_opt:
+      - apparmor:unconfined
     ports:
       - "9009:9009"
     volumes:
       - relaydeck-data:/app/data
+      - /proc:/host/proc:ro
     ulimits:
       nofile:
         soft: 65536

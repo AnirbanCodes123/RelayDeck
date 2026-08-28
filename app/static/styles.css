@@ -220,6 +220,9 @@ h2 { margin: 0 0 4px; font-size: 18px; letter-spacing: -.035em; }
 .bulk-actions { display: flex; gap: 7px; }
 .bulk-actions button, .stream-toggle { height: 34px; padding: 0 12px; color: #68717e; background: white; border: 1px solid var(--line); border-radius: 6px; cursor: pointer; font-size: 9px; font-weight: 600; }
 .bulk-actions button:first-child { color: var(--green); border-color: #a8ddca; }
+.bulk-actions button.clear-all { color: var(--red); border-color: #f0c4bd; }
+.bulk-actions button.clear-all:hover { border-color: #e39a8f; background: #fff7f5; }
+.bulk-actions button:disabled { opacity: .45; cursor: not-allowed; }
 .bulk-actions button:hover, .stream-toggle:hover { border-color: #afb6c1; }
 .workspace-tabs {
   margin: -4px 0 16px; display: flex; gap: 6px; padding: 4px;
@@ -261,7 +264,7 @@ h2 { margin: 0 0 4px; font-size: 18px; letter-spacing: -.035em; }
 .search-box svg { width: 15px; fill: none; stroke: #9097a2; stroke-width: 1.6; }
 .search-box input { width: 100%; border: 0; outline: 0; background: transparent; font-size: 10px; }
 .stream-toolbar > span { color: #9097a2; font: 9px var(--mono); }
-.stream-list-head, .stream-row { display: grid; grid-template-columns: minmax(180px,1.25fr) minmax(220px,1.5fr) 75px 85px 75px 116px; gap: 13px; align-items: center; }
+.stream-list-head, .stream-row { display: grid; grid-template-columns: minmax(160px,1.15fr) minmax(190px,1.35fr) 68px 92px 82px 70px 116px; gap: 13px; align-items: center; }
 .stream-list-head { padding: 10px 13px; color: #969da8; border-bottom: 1px solid var(--line); font: 500 8px var(--mono); text-transform: uppercase; letter-spacing: .08em; }
 .stream-list { border: 1px solid var(--line); border-radius: 9px; overflow: hidden; }
 .stream-row { min-height: 69px; padding: 11px 13px; border-bottom: 1px solid var(--line); background: white; }
@@ -281,10 +284,14 @@ h2 { margin: 0 0 4px; font-size: 18px; letter-spacing: -.035em; }
 .endpoint-cell code { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: #455064; font: 8.5px var(--mono); }
 .copy-stream { flex: 0 0 20px; height: 20px; }
 .copy-stream svg { width: 13px; fill: none; stroke: currentColor; stroke-width: 1.6; }
-.mode-badge, .state-badge { width: fit-content; padding: 5px 7px; border-radius: 4px; font: 500 8px var(--mono); text-transform: uppercase; }
+.mode-badge, .device-badge, .state-badge { width: fit-content; padding: 5px 7px; border-radius: 4px; font: 500 8px var(--mono); text-transform: uppercase; white-space: nowrap; }
 .mode-badge { color: #5d6f8f; background: #edf1f8; }
 .mode-badge.transcode { color: #92552e; background: #fff0e5; }
 .mode-badge.nvidia { color: #3d741f; background: #eaf6e3; }
+.device-badge { color: #5d6f8f; background: #edf1f8; }
+.device-badge.cpu { color: #5a6578; background: #eef1f6; }
+.device-badge.copy { color: #5d6f8f; background: #edf1f8; }
+.device-badge.nvidia { color: #3d741f; background: #eaf6e3; }
 .state-badge { display: flex; align-items: center; gap: 5px; color: #737c88; background: #f0f2f4; }
 .state-badge i { width: 4px; height: 4px; border-radius: 50%; background: currentColor; }
 .state-badge b { font: inherit; }
@@ -324,7 +331,7 @@ footer { max-width: 1128px; margin: auto; padding: 24px 0 35px; display: flex; j
 @media (max-width: 980px) {
   .hero-signal { display: none; }
   .stream-list-head { display: none; }
-  .stream-row { grid-template-columns: minmax(180px,1.2fr) minmax(220px,1.4fr) 70px 85px 100px; }
+  .stream-row { grid-template-columns: minmax(160px,1.2fr) minmax(180px,1.3fr) 70px 88px 85px 100px; }
   .uptime-cell { display: none; }
 }
 @media (max-width: 760px) {
@@ -346,7 +353,7 @@ footer { max-width: 1128px; margin: auto; padding: 24px 0 35px; display: flex; j
   .remove-queue { grid-column: 3; grid-row: 1; }
   .stream-row { grid-template-columns: 1fr auto; gap: 10px; }
   .endpoint-cell { grid-column: 1 / -1; grid-row: 2; }
-  .mode-badge, .state-badge { grid-row: 3; }
+  .mode-badge, .device-badge, .state-badge { grid-row: 3; }
   .row-actions { grid-column: 2; grid-row: 1; }
   .stream-details { grid-column: 1 / -1; margin-left: 0; }
   .consumer-strip { display: none; }

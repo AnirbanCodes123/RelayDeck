@@ -41,10 +41,10 @@ VLC's input/codecs preferences.
 
 ## NVIDIA GPU acceleration
 
-The upload queue provides **Auto**, **CPU**, and **NVIDIA GPU** transcoding
-options. H.264/AAC inputs still use stream-copy because re-encoding them would
-waste CPU or GPU resources. Other formats can use NVIDIA NVENC for H.264
-encoding.
+The upload queue provides **CPU** and **NVIDIA GPU** processing. Choosing
+**NVIDIA GPU** encodes every source with NVENC, including H.264/AAC files.
+**CPU** still stream-copies compatible H.264/AAC inputs and only transcodes
+other codecs with libx264.
 
 On an NVIDIA host, install the NVIDIA driver and NVIDIA Container Toolkit, then
 start RelayDeck with both Compose files so the portal container receives the GPU:
@@ -79,11 +79,11 @@ and MediaMTX restart.
 
 RelayDeck probes every upload before starting it:
 
-- H.264 video with AAC or no audio uses FFmpeg stream-copy. This is the
-  preferred path for large deployments because it avoids video re-encoding.
-  RelayDeck converts copied H.264 NAL units to Annex B for reliable RTP
-  packetization.
-- Other codecs use CPU H.264/AAC transcoding for broad RTSP compatibility.
+- If **NVIDIA GPU** is selected and NVENC is available, every file is
+  transcoded with `h264_nvenc`.
+- If **CPU** is selected, H.264 video with AAC or no audio uses FFmpeg
+  stream-copy. RelayDeck converts copied H.264 NAL units to Annex B for
+  reliable RTP packetization. Other codecs use CPU H.264/AAC transcoding.
 
 The 80-stream limit is a process-management capacity, not a guarantee that
 every server can transcode 80 videos. Stream-copy publishers are lightweight,

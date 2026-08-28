@@ -52,7 +52,9 @@ def test_processing_engine_selection_uses_nvidia_when_available(
     assert resolve_processing_mode("transcode", "auto") == "nvidia"
     assert resolve_processing_mode("transcode", "nvidia") == "nvidia"
     assert resolve_processing_mode("transcode", "cpu") == "cpu"
-    assert resolve_processing_mode("copy", "nvidia") == "copy"
+    assert resolve_processing_mode("copy", "nvidia") == "nvidia"
+    assert resolve_processing_mode("copy", "auto") == "copy"
+    assert resolve_processing_mode("copy", "cpu") == "copy"
 
 
 @patch(
@@ -61,6 +63,7 @@ def test_processing_engine_selection_uses_nvidia_when_available(
 )
 def test_nvidia_selection_falls_back_to_cpu(_gpu_status: MagicMock) -> None:
     assert resolve_processing_mode("transcode", "nvidia") == "cpu"
+    assert resolve_processing_mode("copy", "nvidia") == "copy"
 
 
 def test_manager_enforces_endpoint_uniqueness_and_capacity(tmp_path: Path) -> None:
@@ -75,6 +78,16 @@ def test_manager_enforces_endpoint_uniqueness_and_capacity(tmp_path: Path) -> No
         manager.register(
             "three", tmp_path / "three.mp4", "three.mp4", "camera3", True, "copy"
         )
+
+
+def test_unregister_all_clears_the_registry(tmp_path: Path) -> None:
+    manager = StreamManager(max_streams=2)
+    manager.register("one", tmp_path / "one.mp4", "one.mp4", "camera1", True, "copy")
+    manager.register("two", tmp_path / "two.mp4", "two.mp4", "camera2", True, "nvidia")
+    removed = manager.unregister_all()
+    assert {stream.id for stream in removed} == {"one", "two"}
+    assert manager.list() == []
+    assert manager.aggregate()["total"] == 0
 
 
 @patch("app.streamer.threading.Thread.start")

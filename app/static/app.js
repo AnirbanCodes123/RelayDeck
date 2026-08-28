@@ -26,7 +26,7 @@ let toastTimer;
 let gpuDefaultApplied = false;
 let metricsInFlight = false;
 const METRIC_HISTORY = 40;
-const metricHistory = { cpu: [], ram: [], gpu: [] };
+const metricHistory = { cpu: [], ram: [], gpu: [], edgeCpu: [], edgeRam: [], edgeGpu: [] };
 
 function slugify(filename) {
   return filename
@@ -303,6 +303,7 @@ function renderStreams() {
   );
   streamList.replaceChildren();
   $("#visibleCount").textContent = `${visible.length} stream${visible.length === 1 ? "" : "s"}`;
+  $("#clearAllButton").disabled = streams.length === 0;
 
   for (const stream of visible) {
     const node = streamTemplate.content.firstElementChild.cloneNode(true);
@@ -318,6 +319,13 @@ function renderStreams() {
       ["cpu", "transcode"].includes(stream.processing_mode),
     );
     mode.classList.toggle("nvidia", stream.processing_mode === "nvidia");
+    const device = node.querySelector(".device-badge");
+    const onGpu = stream.processing_mode === "nvidia";
+    const copied = stream.processing_mode === "copy";
+    device.textContent = onGpu ? "NVIDIA GPU" : copied ? "Copy" : "CPU";
+    device.classList.toggle("nvidia", onGpu);
+    device.classList.toggle("cpu", !onGpu && !copied);
+    device.classList.toggle("copy", copied);
     node.querySelector(".state-badge b").textContent = stream.status;
     node.querySelector(".uptime-cell").textContent = formatUptime(stream.uptime_seconds);
     const active = ["starting", "live", "stopping"].includes(stream.status);
@@ -422,6 +430,28 @@ async function deleteStream(stream) {
   }
 }
 
+async function clearAllStreams() {
+  if (!streams.length) return;
+  const count = streams.length;
+  if (
+    !window.confirm(
+      `Delete all ${count} video${count === 1 ? "" : "s"} and stop their streams? This cannot be undone.`,
+    )
+  ) {
+    return;
+  }
+  const button = $("#clearAllButton");
+  button.disabled = true;
+  try {
+    await apiAction("/api/streams/actions/clear-all");
+    notify(`${count} video${count === 1 ? "" : "s"} removed.`);
+    await refreshStreams();
+  } catch (error) {
+    notify(error.message, true);
+    button.disabled = streams.length === 0;
+  }
+}
+
 async function refreshStreams() {
   try {
     const response = await fetch("/api/streams", { cache: "no-store" });
@@ -475,6 +505,66 @@ function renderHostMetrics(data) {
       .join(" · ");
   }
   renderMeter("gpu", gpu.percent, gpuDetail, Boolean(gpu.available));
+  renderEdgeMetrics(data);
+}
+
+function renderEdgeMetrics(data) {
+  const agent = data.edge_agent || {};
+  const stamp = $("#edgeMetricsStamp");
+  const port = agent.port || 9000;
+  if (!agent.available) {
+    stamp.textContent = `Not found · :${port}`;
+    stamp.classList.add("stale");
+    pushHistory("edgeCpu", null);
+    pushHistory("edgeRam", null);
+    pushHistory("edgeGpu", null);
+    renderMeter("edgeCpu", null, `edge_agent is not listening on port ${port}`, false);
+    renderMeter("edgeRam", null, "Process RSS unavailable", false);
+    renderMeter("edgeGpu", null, "Process GPU unavailable", false);
+    return;
+  }
+
+  stamp.textContent = `Live · :${port}`;
+  stamp.classList.remove("stale");
+  const cpu = agent.cpu || {};
+  const memory = agent.memory || {};
+  const gpu = agent.gpu || {};
+  pushHistory("edgeCpu", cpu.percent);
+  pushHistory("edgeRam", memory.percent);
+  pushHistory("edgeGpu", gpu.available ? gpu.percent : null);
+
+  const cpuDetail = [
+    agent.name || "edge_agent",
+    agent.pid != null ? `pid ${agent.pid}` : null,
+    cpu.cores_used != null ? `${cpu.cores_used} cores` : null,
+    agent.threads != null ? `${agent.threads} threads` : null,
+  ]
+    .filter(Boolean)
+    .join(" · ") || "Sampling…";
+  renderMeter("edgeCpu", cpu.percent, cpuDetail, cpu.percent != null);
+
+  const ramDetail =
+    memory.used_bytes != null && memory.total_bytes
+      ? `${formatGiB(memory.used_bytes)} / ${formatGiB(memory.total_bytes)} RSS`
+      : memory.used_bytes != null
+        ? `${formatGiB(memory.used_bytes)} RSS`
+        : "Memory unavailable";
+  renderMeter("edgeRam", memory.percent, ramDetail, memory.percent != null);
+
+  let gpuDetail = "GPU unavailable";
+  if (gpu.available) {
+    gpuDetail = [
+      gpu.name,
+      gpu.memory_used_bytes != null && gpu.memory_total_bytes
+        ? `${formatGiB(gpu.memory_used_bytes)} / ${formatGiB(gpu.memory_total_bytes)}`
+        : gpu.memory_used_bytes != null
+          ? `${formatGiB(gpu.memory_used_bytes)} GPU mem`
+          : "No GPU compute",
+    ]
+      .filter(Boolean)
+      .join(" · ");
+  }
+  renderMeter("edgeGpu", gpu.percent, gpuDetail, Boolean(gpu.available));
 }
 
 async function refreshMetrics() {
@@ -487,6 +577,8 @@ async function refreshMetrics() {
   } catch {
     $("#metricsStamp").textContent = "Offline";
     $("#metricsStamp").classList.add("stale");
+    $("#edgeMetricsStamp").textContent = "Offline";
+    $("#edgeMetricsStamp").classList.add("stale");
   } finally {
     metricsInFlight = false;
   }
@@ -554,6 +646,7 @@ $("#stopAllButton").addEventListener("click", async () => {
     notify(error.message, true);
   }
 });
+$("#clearAllButton").addEventListener("click", clearAllStreams);
 
 renderQueue();
 refreshStreams();

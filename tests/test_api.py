@@ -34,6 +34,12 @@ def test_metrics_endpoint_returns_host_snapshot(monkeypatch, tmp_path: Path) -> 
     assert "memory" in payload
     assert "gpu" in payload
     assert "percent" in payload["cpu"]
+    assert "edge_agent" in payload
+    assert payload["edge_agent"]["port"] == 9000
+    assert "cpu" in payload["edge_agent"]
+    assert "memory" in payload["edge_agent"]
+    assert "gpu" in payload["edge_agent"]
+    assert "percent" in payload["edge_agent"]["cpu"]
 
 
 def test_upload_rejects_invalid_endpoint(monkeypatch, tmp_path: Path) -> None:
@@ -60,3 +66,28 @@ def test_upload_rejects_when_registry_is_full(monkeypatch, tmp_path: Path) -> No
         )
     assert response.status_code == 409
     assert "capacity" in response.json()["detail"].lower()
+
+
+def test_clear_all_removes_streams_and_uploads(monkeypatch, tmp_path: Path) -> None:
+    configure_test_runtime(monkeypatch, tmp_path)
+    upload_dir = tmp_path / "uploads"
+    upload_dir.mkdir()
+    first = upload_dir / "one.mp4"
+    second = upload_dir / "two.mp4"
+    first.write_bytes(b"one")
+    second.write_bytes(b"two")
+    main.store.initialize()
+    main.store.create("one", "one.mp4", first, "camera1", True, "copy")
+    main.store.create("two", "two.mp4", second, "camera2", True, "nvidia")
+    with TestClient(main.app) as client:
+        listed = client.get("/api/streams")
+        assert listed.json()["aggregate"]["total"] == 2
+        response = client.post("/api/streams/actions/clear-all")
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["deleted"] == 2
+    assert payload["aggregate"]["total"] == 0
+    assert not first.exists()
+    assert not second.exists()
+    assert main.store.list() == []
+    assert main.manager.list() == []

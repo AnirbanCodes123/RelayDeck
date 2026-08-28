@@ -132,11 +132,14 @@ def nvidia_gpu_status() -> dict[str, Any]:
 
 
 def resolve_processing_mode(media_mode: str, requested_engine: str) -> str:
+    gpu_available = nvidia_gpu_status()["available"]
+    if requested_engine == "nvidia":
+        if gpu_available:
+            return "nvidia"
+        return "copy" if media_mode == "copy" else "cpu"
     if media_mode == "copy":
         return "copy"
-    if requested_engine == "cpu":
-        return "cpu"
-    if requested_engine in {"auto", "nvidia"} and nvidia_gpu_status()["available"]:
+    if requested_engine != "cpu" and gpu_available:
         return "nvidia"
     return "cpu"
 
@@ -251,6 +254,14 @@ class StreamManager:
             stream = self._require(stream_id)
             self._names.pop(stream.stream_name, None)
             return self._streams.pop(stream_id)
+
+    def unregister_all(self) -> list[ManagedStream]:
+        self.stop_all()
+        with self._lock:
+            streams = list(self._streams.values())
+            self._streams.clear()
+            self._names.clear()
+            return streams
 
     def start(self, stream_id: str) -> dict[str, Any]:
         if not shutil.which("ffmpeg"):

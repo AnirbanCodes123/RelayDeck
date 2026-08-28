@@ -14,8 +14,8 @@
       href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=Manrope:wght@400;500;600;700&display=swap"
       rel="stylesheet"
     />
-    <link rel="stylesheet" href="/static/styles.css?v=5" />
-    <script src="/static/app.js?v=5" defer></script>
+    <link rel="stylesheet" href="/static/styles.css?v=9" />
+    <script src="/static/app.js?v=9" defer></script>
   </head>
   <body>
     <div class="ambient ambient-one"></div>
@@ -102,6 +102,48 @@
             <div class="meter-foot">
               <small id="gpuDetail">Sampling…</small>
               <span id="gpuSpark" class="spark-wrap"></span>
+            </div>
+          </article>
+        </div>
+      </section>
+
+      <section class="host-monitor" aria-label="Live edge agent resource monitor">
+        <div class="host-monitor-head">
+          <span>Live edge agent monitor</span>
+          <small id="edgeMetricsStamp">Connecting…</small>
+        </div>
+        <div class="host-monitor-grid">
+          <article class="meter" id="edgeCpuMeter" data-metric="edge-cpu">
+            <div class="meter-top">
+              <span>CPU</span>
+              <strong id="edgeCpuPercent">—</strong>
+            </div>
+            <div class="meter-bar" aria-hidden="true"><i id="edgeCpuBar"></i></div>
+            <div class="meter-foot">
+              <small id="edgeCpuDetail">Sampling…</small>
+              <span id="edgeCpuSpark" class="spark-wrap"></span>
+            </div>
+          </article>
+          <article class="meter" id="edgeRamMeter" data-metric="edge-ram">
+            <div class="meter-top">
+              <span>RAM</span>
+              <strong id="edgeRamPercent">—</strong>
+            </div>
+            <div class="meter-bar" aria-hidden="true"><i id="edgeRamBar"></i></div>
+            <div class="meter-foot">
+              <small id="edgeRamDetail">Sampling…</small>
+              <span id="edgeRamSpark" class="spark-wrap"></span>
+            </div>
+          </article>
+          <article class="meter" id="edgeGpuMeter" data-metric="edge-gpu">
+            <div class="meter-top">
+              <span>GPU</span>
+              <strong id="edgeGpuPercent">—</strong>
+            </div>
+            <div class="meter-bar" aria-hidden="true"><i id="edgeGpuBar"></i></div>
+            <div class="meter-foot">
+              <small id="edgeGpuDetail">Sampling…</small>
+              <span id="edgeGpuSpark" class="spark-wrap"></span>
             </div>
           </article>
         </div>
@@ -196,6 +238,7 @@
           <div class="bulk-actions">
             <button id="startAllButton" type="button">Start all</button>
             <button id="stopAllButton" type="button">Stop all</button>
+            <button id="clearAllButton" class="clear-all" type="button" disabled>Clear all</button>
           </div>
         </div>
 
@@ -237,6 +280,7 @@
           <span>Source</span>
           <span>RTSP endpoint</span>
           <span>Mode</span>
+          <span>Device</span>
           <span>Status</span>
           <span>Uptime</span>
           <span></span>
@@ -317,6 +361,7 @@
           </button>
         </div>
         <span class="mode-badge"></span>
+        <span class="device-badge"></span>
         <span class="state-badge"><i></i><b></b></span>
         <code class="uptime-cell"></code>
         <div class="row-actions">
