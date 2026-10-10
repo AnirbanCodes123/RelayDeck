@@ -180,6 +180,10 @@ def probe_processing_mode(video_path: Path) -> str:
     ]
     if not video_codecs:
         raise RuntimeError("The selected file does not contain a video stream.")
+    # H.264 in AVI can lack reliable presentation timestamps, especially with
+    # B-frames. Decode/re-encode to create timestamps that remain valid on loops.
+    if video_path.suffix.lower() == ".avi":
+        return "transcode"
     return (
         "copy"
         if video_codecs[0] == "h264" and all(codec == "aac" for codec in audio_codecs)
@@ -236,6 +240,9 @@ class StreamManager:
                 raise RuntimeError(f"Stream capacity reached ({self.max_streams}).")
             if stream_name in self._names:
                 raise RuntimeError(f"RTSP endpoint '{stream_name}' is already in use.")
+            # Also repair copy mode in AVI records restored from older versions.
+            if processing_mode == "copy" and video_path.suffix.lower() == ".avi":
+                processing_mode = "cpu"
             stream = ManagedStream(
                 id=stream_id,
                 video_path=video_path,
@@ -331,6 +338,10 @@ class StreamManager:
             "-map",
             "0:a?",
         ]
+        if stream.processing_mode != "copy":
+            # AVI codecs such as MJPEG can carry odd-sized frames. Both H.264
+            # encoders require even dimensions for yuv420p; pad rather than crop.
+            command += ["-vf", "pad=ceil(iw/2)*2:ceil(ih/2)*2"]
         if stream.processing_mode == "copy":
             command += [
                 "-c:v",
@@ -429,9 +440,16 @@ class StreamManager:
             else:
                 stream.status = "error"
                 stream.error = (
-                    stream.logs[-1]
+                    "\n".join(list(stream.logs)[-20:])
                     if stream.logs
                     else "FFmpeg exited unexpectedly."
+                )
+                logger.error(
+                    "FFmpeg publisher %s (%s) exited with code %s:\n%s",
+                    stream.stream_name,
+                    stream.original_filename,
+                    return_code,
+                    stream.error,
                 )
 
     def stop(self, stream_id: str) -> dict[str, Any]:

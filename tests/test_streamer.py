@@ -1,4 +1,5 @@
 import json
+import shutil
 import subprocess
 from pathlib import Path
 from unittest.mock import MagicMock, patch
@@ -23,6 +24,19 @@ def probe_result(video_codec: str, audio_codec: str | None = None) -> MagicMock:
 def test_probe_selects_copy_for_h264_aac(run: MagicMock, tmp_path: Path) -> None:
     run.return_value = probe_result("h264", "aac")
     assert probe_processing_mode(tmp_path / "video.mp4") == "copy"
+
+
+@patch("app.streamer.subprocess.run")
+def test_h264_avi_is_transcoded_for_reliable_timestamps(run: MagicMock, tmp_path: Path) -> None:
+    run.return_value = probe_result("h264", "aac")
+    assert probe_processing_mode(tmp_path / "video.AVI") == "transcode"
+
+
+def test_restored_avi_copy_mode_is_repaired(tmp_path: Path) -> None:
+    manager = StreamManager()
+    state = manager.register("avi", tmp_path / "old.avi", "old.avi", "avi", True, "copy")
+    assert state["processing_mode"] == "cpu"
+    assert "libx264" in manager._build_command(manager._streams["avi"])
 
 
 @patch("app.streamer.subprocess.run")
@@ -138,6 +152,53 @@ def test_nvidia_stream_builds_nvenc_command(tmp_path: Path) -> None:
     assert "-nostdin" in command
     assert "-tune" in command
     assert "ll" in command
+
+
+@pytest.mark.parametrize("mode", ["cpu", "nvidia"])
+def test_transcoding_pads_frames_for_yuv420p(mode: str, tmp_path: Path) -> None:
+    manager = StreamManager()
+    manager.register("avi", tmp_path / "video.avi", "video.avi", "avi", True, mode)
+    command = manager._build_command(manager._streams["avi"])
+    assert command[command.index("-vf") + 1] == "pad=ceil(iw/2)*2:ceil(ih/2)*2"
+
+
+@pytest.mark.skipif(not shutil.which("ffmpeg"), reason="FFmpeg is required")
+def test_odd_sized_avi_can_be_transcoded(tmp_path: Path) -> None:
+    video = tmp_path / "odd.avi"
+    subprocess.run(
+        [
+            "ffmpeg", "-hide_banner", "-loglevel", "error",
+            "-f", "lavfi", "-i", "testsrc=size=321x241:rate=25",
+            "-t", "0.2", "-c:v", "mjpeg", str(video),
+        ],
+        capture_output=True, text=True, check=True, timeout=15,
+    )
+    manager = StreamManager()
+    mode = probe_processing_mode(video)
+    assert mode == "transcode"
+    manager.register("avi", video, video.name, "avi", False, mode)
+    command = manager._build_command(manager._streams["avi"])
+    # Exercise the actual input/encoder path without needing an RTSP server.
+    command = command[:command.index("-avoid_negative_ts")] + ["-f", "null", "-"]
+    result = subprocess.run(command, capture_output=True, text=True, timeout=15)
+    assert result.returncode == 0, result.stderr
+
+
+def test_publisher_failure_preserves_encoder_error(tmp_path: Path, caplog) -> None:
+    manager = StreamManager()
+    manager.register("avi", tmp_path / "video.avi", "video.avi", "avi", False, "cpu")
+    process = MagicMock()
+    process.stderr = iter([
+        "width not divisible by 2 (321x241)\n",
+        "Nothing was written into output file\n",
+    ])
+    process.wait.return_value = 1
+    manager._streams["avi"].process = process
+    manager._capture_output("avi", process)
+    state = manager.get("avi")
+    assert state["status"] == "error"
+    assert "width not divisible" in state["error"]
+    assert "width not divisible" in caplog.text
 
 
 @patch("app.streamer.shutil.which", side_effect=lambda name: f"/usr/bin/{name}")
