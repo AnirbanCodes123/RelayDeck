@@ -10,7 +10,7 @@ from contextlib import asynccontextmanager
 from pathlib import Path
 
 import aiofiles
-from fastapi import FastAPI, File, Form, HTTPException, UploadFile
+from fastapi import FastAPI, File, Form, HTTPException, Request, UploadFile
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
@@ -46,7 +46,7 @@ ALLOWED_EXTENSIONS = {
 manager = StreamManager(
     mediamtx_host=os.getenv("MEDIAMTX_HOST", "127.0.0.1"),
     mediamtx_port=int(os.getenv("MEDIAMTX_RTSP_PORT", "8554")),
-    public_host=os.getenv("RTSP_PUBLIC_HOST", "localhost"),
+    public_host=os.getenv("RTSP_PUBLIC_HOST", "").strip(),
     max_streams=MAX_STREAMS,
 )
 store = StreamStore(DATABASE_PATH)
@@ -125,6 +125,19 @@ def services() -> dict:
     }
 
 
+def public_stream(stream: dict, request: Request) -> dict:
+    # The HTTP host is the address clients use to reach this machine, even
+    # when the app runs inside Docker. Never advertise the container address.
+    host = manager.public_host or request.url.hostname or "localhost"
+    host = host.strip("[]")
+    if ":" in host:
+        host = f"[{host}]"
+    return {
+        **stream,
+        "rtsp_url": f"rtsp://{host}:{manager.mediamtx_port}/{stream['stream_name']}",
+    }
+
+
 def require_stream(stream_id: str, include_logs: bool = True) -> dict:
     try:
         return manager.get(stream_id, include_logs=include_logs)
@@ -133,21 +146,22 @@ def require_stream(stream_id: str, include_logs: bool = True) -> dict:
 
 
 @app.get("/api/status")
-async def stream_status() -> dict:
+async def stream_status(request: Request) -> dict:
     return {
-        "streams": manager.list(),
+        "streams": [public_stream(stream, request) for stream in manager.list()],
         "aggregate": manager.aggregate(),
         "services": await asyncio.to_thread(services),
     }
 
 
 @app.get("/api/streams")
-async def list_streams() -> dict:
-    return await stream_status()
+async def list_streams(request: Request) -> dict:
+    return await stream_status(request)
 
 
 @app.post("/api/streams")
 async def start_stream(
+    request: Request,
     video: UploadFile = File(...),
     stream_name: str = Form("camera1"),
     loop: bool = Form(True),
@@ -242,32 +256,33 @@ async def start_stream(
 
     state["requested_engine"] = transcode_engine
     state["gpu_fallback"] = gpu_fallback
-    return state
+    return public_stream(state, request)
 
 
 @app.get("/api/streams/{stream_id}")
-async def stream_detail(stream_id: str) -> dict:
-    return require_stream(stream_id)
+async def stream_detail(stream_id: str, request: Request) -> dict:
+    return public_stream(require_stream(stream_id), request)
 
 
 @app.post("/api/streams/{stream_id}/start")
-async def start_existing_stream(stream_id: str) -> dict:
+async def start_existing_stream(stream_id: str, request: Request) -> dict:
     require_stream(stream_id, include_logs=False)
     if not mediamtx_available():
         raise HTTPException(status_code=503, detail="MediaMTX is not reachable.")
     try:
         state = manager.start(stream_id)
         store.set_desired_running(stream_id, True)
-        return state
+        return public_stream(state, request)
     except RuntimeError as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
 
 
 @app.post("/api/streams/{stream_id}/stop")
-async def stop_stream(stream_id: str) -> dict:
+async def stop_stream(stream_id: str, request: Request) -> dict:
     require_stream(stream_id, include_logs=False)
     store.set_desired_running(stream_id, False)
-    return await asyncio.to_thread(manager.stop, stream_id)
+    state = await asyncio.to_thread(manager.stop, stream_id)
+    return public_stream(state, request)
 
 
 @app.delete("/api/streams/{stream_id}")
@@ -280,30 +295,30 @@ async def delete_stream(stream_id: str) -> dict:
 
 
 @app.post("/api/streams/actions/start-all")
-async def start_all_streams() -> dict:
+async def start_all_streams(request: Request) -> dict:
     if not mediamtx_available():
         raise HTTPException(status_code=503, detail="MediaMTX is not reachable.")
     store.set_all_desired_running(True)
     await asyncio.to_thread(manager.start_all)
-    return await stream_status()
+    return await stream_status(request)
 
 
 @app.post("/api/streams/actions/stop-all")
-async def stop_all_streams() -> dict:
+async def stop_all_streams(request: Request) -> dict:
     store.set_all_desired_running(False)
     await asyncio.to_thread(manager.stop_all)
-    return await stream_status()
+    return await stream_status(request)
 
 
 @app.post("/api/streams/actions/clear-all")
-async def clear_all_streams() -> dict:
+async def clear_all_streams(request: Request) -> dict:
     streams = await asyncio.to_thread(manager.unregister_all)
     records = store.delete_all()
     paths = {str(stream.video_path) for stream in streams}
     paths.update(record["video_path"] for record in records)
     for raw_path in paths:
         Path(raw_path).unlink(missing_ok=True)
-    status = await stream_status()
+    status = await stream_status(request)
     status["deleted"] = len(records)
     return status
 

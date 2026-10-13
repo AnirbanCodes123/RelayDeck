@@ -1,4 +1,22 @@
 const $ = (selector) => document.querySelector(selector);
+const themeToggle = $("#themeToggle");
+const themeLabel = $("#themeLabel");
+
+function renderThemeToggle() {
+  const dark = document.documentElement.dataset.theme === "dark";
+  themeToggle.setAttribute("aria-pressed", String(dark));
+  themeToggle.title = dark ? "Switch to light mode" : "Switch to dark mode";
+  themeLabel.textContent = dark ? "Light mode" : "Dark mode";
+}
+
+themeToggle.addEventListener("click", () => {
+  const theme = document.documentElement.dataset.theme === "dark" ? "light" : "dark";
+  document.documentElement.dataset.theme = theme;
+  try { localStorage.setItem("relaydeck-theme", theme); } catch {}
+  renderThemeToggle();
+});
+renderThemeToggle();
+
 const videoInput = $("#videoInput");
 const dropzone = $("#dropzone");
 const queueSection = $("#queueSection");

@@ -22,16 +22,17 @@ docker compose -f docker-compose.yml -f docker-compose.gpu.yml up -d --build
 
 Open [http://localhost:9009](http://localhost:9009). Select multiple videos,
 review their generated endpoint names, then publish them. Every stream gets a
-URL such as:
+URL using the address you opened RelayDeck with. For example, opening
+`http://192.168.1.50:9009` produces:
 
 ```text
-rtsp://localhost:8554/camera-01
+rtsp://192.168.1.50:8554/camera-01
 ```
 
 Test a stream with:
 
 ```bash
-ffplay -rtsp_transport tcp rtsp://localhost:8554/camera-01
+ffplay -rtsp_transport tcp rtsp://192.168.1.50:8554/camera-01
 ```
 
 MediaMTX is configured for RTSP-over-TCP only. This prevents RTP packet loss
@@ -129,14 +130,24 @@ uvicorn app.main:app --reload --port 9009
 - `MAX_STREAMS` (`80`): maximum configured and concurrently active streams.
 - `MEDIAMTX_HOST` (`127.0.0.1`): MediaMTX hostname used by FFmpeg.
 - `MEDIAMTX_RTSP_PORT` (`8554`): MediaMTX RTSP port.
-- `RTSP_PUBLIC_HOST` (`localhost`): host shown in consumer RTSP URLs.
+- `RTSP_PUBLIC_HOST` (unset): use the hostname/IP from the RelayDeck request
+  in consumer RTSP URLs. Set this to override the advertised address.
 - `DATA_DIR` (`data`): SQLite database and default upload parent.
 - `UPLOAD_DIR` (`DATA_DIR/uploads`): uploaded media storage override.
 - `DATABASE_PATH` (`DATA_DIR/relaydeck.db`): registry database override.
 - `MAX_UPLOAD_BYTES` (`21474836480`): maximum size of each upload, 20 GiB.
 
-For clients on another computer, set `RTSP_PUBLIC_HOST` to the Docker host's LAN
-IP or DNS name and allow inbound TCP port `8554`.
+Open RelayDeck using the server/laptop LAN IP (for example,
+`http://192.168.1.50:9009`) to display and copy RTSP URLs with that IP.
+If you open the portal through `localhost` or a reverse proxy, set an explicit
+server/laptop IP so the URLs are usable from other computers:
+
+```bash
+RTSP_PUBLIC_HOST=192.168.1.50 docker compose up -d
+```
+
+You can also put `RTSP_PUBLIC_HOST=192.168.1.50` in a `.env` file beside
+`docker-compose.yml`. Allow inbound TCP port `8554` for remote RTSP clients.
 
 ## API summary
 

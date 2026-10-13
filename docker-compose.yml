@@ -24,7 +24,7 @@ services:
     environment:
       MEDIAMTX_HOST: mediamtx
       MEDIAMTX_RTSP_PORT: "8554"
-      RTSP_PUBLIC_HOST: localhost
+      RTSP_PUBLIC_HOST: ${RTSP_PUBLIC_HOST:-}
       DATA_DIR: /app/data
       MAX_STREAMS: "80"
       EDGE_AGENT_PORT: "9000"

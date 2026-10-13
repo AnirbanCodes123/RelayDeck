@@ -1,5 +1,7 @@
 from pathlib import Path
 
+import pytest
+
 from fastapi.testclient import TestClient
 
 import app.main as main
@@ -91,3 +93,37 @@ def test_clear_all_removes_streams_and_uploads(monkeypatch, tmp_path: Path) -> N
     assert not second.exists()
     assert main.store.list() == []
     assert main.manager.list() == []
+
+
+@pytest.mark.parametrize(
+    ("base_url", "override", "expected_host"),
+    [
+        ("http://192.168.1.50:9009", "", "192.168.1.50"),
+        ("http://10.0.0.8:9009", "", "10.0.0.8"),
+        ("http://localhost:9009", "192.168.1.50", "192.168.1.50"),
+        ("http://[2001:db8::1]:9009", "", "[2001:db8::1]"),
+    ],
+)
+def test_public_rtsp_urls_use_request_host_or_override(
+    monkeypatch, tmp_path: Path, base_url: str, override: str, expected_host: str
+) -> None:
+    configure_test_runtime(monkeypatch, tmp_path)
+    main.manager.public_host = override
+    with TestClient(main.app, base_url=base_url) as client:
+        video = tmp_path / "camera.mp4"
+        video.touch()
+        main.manager.register("one", video, "camera.mp4", "mcl1", True, "copy")
+        main.store.create("one", "camera.mp4", video, "mcl1", True, "copy")
+        expected_url = f"rtsp://{expected_host}:8554/mcl1"
+        for path in ("/api/streams", "/api/status"):
+            assert client.get(path).json()["streams"][0]["rtsp_url"] == expected_url
+        assert client.get("/api/streams/one").json()["rtsp_url"] == expected_url
+        assert client.post("/api/streams/one/stop").json()["rtsp_url"] == expected_url
+        assert client.post("/api/streams/actions/stop-all").json()["streams"][0]["rtsp_url"] == expected_url
+        # Requests from another address must not change the publisher target
+        # or leak into a later response for the original address.
+        if not override:
+            other = client.get("http://10.0.0.9:9009/api/streams").json()
+            assert other["streams"][0]["rtsp_url"] == "rtsp://10.0.0.9:8554/mcl1"
+            assert client.get("/api/streams/one").json()["rtsp_url"] == expected_url
+        assert main.manager.mediamtx_host == "127.0.0.1"

@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="en">
+<html lang="en" data-theme="light">
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
@@ -7,6 +7,17 @@
       name="description"
       content="Publish local video files as standards-compatible RTSP streams."
     />
+    <script>
+      // Apply the preference before styles load to avoid a flash on refresh.
+      (() => {
+        let theme;
+        try { theme = localStorage.getItem("relaydeck-theme"); } catch {}
+        if (theme !== "light" && theme !== "dark") {
+          theme = window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
+        }
+        document.documentElement.dataset.theme = theme;
+      })();
+    </script>
     <title>RelayDeck — Multi-stream RTSP Router</title>
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
@@ -14,8 +25,8 @@
       href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=Manrope:wght@400;500;600;700&display=swap"
       rel="stylesheet"
     />
-    <link rel="stylesheet" href="/static/styles.css?v=9" />
-    <script src="/static/app.js?v=9" defer></script>
+    <link rel="stylesheet" href="/static/styles.css?v=10" />
+    <script src="/static/app.js?v=10" defer></script>
   </head>
   <body>
     <div class="ambient ambient-one"></div>
@@ -33,9 +44,16 @@
         <a href="#streams">Streams</a>
         <a href="#urls">Live URLs</a>
       </nav>
+      <div class="topbar-actions">
+        <button class="theme-toggle" id="themeToggle" type="button" aria-label="Dark mode" aria-pressed="false">
+          <svg class="theme-moon" viewBox="0 0 24 24" aria-hidden="true"><path d="M20.5 13A8.5 8.5 0 0 1 11 3.5 8.5 8.5 0 1 0 20.5 13Z"/></svg>
+          <svg class="theme-sun" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="4"/><path d="M12 2v2m0 16v2M2 12h2m16 0h2M5 5l1.5 1.5m11 11L19 19M5 19l1.5-1.5m11-11L19 5"/></svg>
+          <span id="themeLabel">Dark mode</span>
+        </button>
       <div class="service-pill" id="servicePill">
         <span class="status-dot"></span>
         <span id="serviceText">Checking media router</span>
+      </div>
       </div>
     </header>
 
