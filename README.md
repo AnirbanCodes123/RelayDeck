@@ -185,6 +185,34 @@ On macOS, also pass `-f docker-compose.yml -f docker-compose.mac.yml`.
 You can also put `RTSP_PUBLIC_HOST=192.168.1.50` in a `.env` file beside
 `docker-compose.yml`. Allow inbound TCP port `8554` for remote RTSP clients.
 
+## Ubuntu build DNS troubleshooting
+
+If the build reports `Temporary failure resolving 'deb.debian.org'`, APT cannot
+download its package indexes. Later errors such as `Unable to locate package
+curl` are a consequence of that DNS failure.
+
+First check DNS on the Ubuntu host:
+
+```bash
+getent hosts deb.debian.org
+```
+
+If the host resolves the name but Docker builds cannot, use the optional Linux
+build network override:
+
+```bash
+sudo docker compose -f docker-compose.yml -f docker-compose.gpu.yml \
+  -f docker-compose.build-host.yml up -d --build
+```
+
+For CPU-only Ubuntu, omit `-f docker-compose.gpu.yml`. The override uses host
+networking only for build steps; service ports and runtime networks retain
+their usual configuration. Use this override on Ubuntu/Linux, not macOS.
+
+If the host lookup also fails, fix the Ubuntu host's network/DNS connection
+before rebuilding. `RTSP_PUBLIC_HOST` controls advertised stream URLs and
+does not configure DNS for Docker builds.
+
 ## API summary
 
 - `GET /api/streams`: lightweight stream list, aggregate counts, and services.

@@ -1,0 +1,5 @@
+# Optional Ubuntu/Linux workaround when Docker build DNS fails but host DNS works.
+services:
+  portal:
+    build:
+      network: host
