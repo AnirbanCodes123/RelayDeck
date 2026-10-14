@@ -85,7 +85,7 @@
 
       <section class="host-monitor" aria-label="Live host resource monitor">
         <div class="host-monitor-head">
-          <span>Live host monitor</span>
+          <span id="hostMonitorTitle">Live host monitor</span>
           <small id="metricsStamp">Connecting…</small>
         </div>
         <div class="host-monitor-grid">
@@ -102,7 +102,7 @@
           </article>
           <article class="meter" id="ramMeter" data-metric="ram">
             <div class="meter-top">
-              <span>RAM</span>
+              <span id="ramLabel">RAM</span>
               <strong id="ramPercent">—</strong>
             </div>
             <div class="meter-bar" aria-hidden="true"><i id="ramBar"></i></div>
@@ -113,7 +113,7 @@
           </article>
           <article class="meter" id="gpuMeter" data-metric="gpu">
             <div class="meter-top">
-              <span>GPU</span>
+              <span id="gpuLabel">GPU</span>
               <strong id="gpuPercent">—</strong>
             </div>
             <div class="meter-bar" aria-hidden="true"><i id="gpuBar"></i></div>

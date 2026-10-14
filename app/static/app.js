@@ -487,11 +487,16 @@ async function refreshStreams() {
 
 function renderHostMetrics(data) {
   const stamp = $("#metricsStamp");
-  stamp.textContent = "Live";
-  stamp.classList.remove("stale");
+  const isMac = data.source === "macos";
+  const offline = data.status === "offline";
+  stamp.textContent = offline ? "Host monitor offline" : "Live";
+  stamp.classList.toggle("stale", offline);
+  $("#hostMonitorTitle").textContent = isMac ? "Live Mac host monitor" : "Live host monitor";
   const cpu = data.cpu || {};
   const memory = data.memory || {};
   const gpu = data.gpu || {};
+  $("#ramLabel").textContent = memory.unified ? "Unified memory" : "RAM";
+  $("#gpuLabel").textContent = isMac && gpu.unified ? "Apple GPU" : "GPU";
   pushHistory("cpu", cpu.percent);
   pushHistory("ram", memory.percent);
   pushHistory("gpu", gpu.available ? gpu.percent : null);
@@ -507,20 +512,24 @@ function renderHostMetrics(data) {
   const ramDetail =
     memory.used_bytes != null && memory.total_bytes
       ? `${formatGiB(memory.used_bytes)} / ${formatGiB(memory.total_bytes)}`
-      : "Memory unavailable";
+      : isMac ? "Start ./scripts/mac.sh for host metrics" : "Memory unavailable";
   renderMeter("ram", memory.percent, ramDetail, memory.percent != null);
 
   let gpuDetail = "GPU unavailable";
   if (gpu.available) {
     gpuDetail = [
       gpu.name,
+      gpu.unified ? "Shares unified memory" : null,
       gpu.memory_used_bytes != null && gpu.memory_total_bytes
         ? `${formatGiB(gpu.memory_used_bytes)} / ${formatGiB(gpu.memory_total_bytes)}`
         : null,
       gpu.temperature_c != null ? `${gpu.temperature_c}°C` : null,
+      gpu.note,
     ]
       .filter(Boolean)
       .join(" · ");
+  } else if (gpu.note) {
+    gpuDetail = gpu.note;
   }
   renderMeter("gpu", gpu.percent, gpuDetail, Boolean(gpu.available));
   renderEdgeMetrics(data);

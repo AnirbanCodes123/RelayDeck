@@ -8,10 +8,10 @@ Frigate, FFplay, OpenCV, VMS/NVR software, and custom AI applications.
 
 Docker Desktop or Docker Engine with Compose is required.
 
-macOS (Docker Desktop, CPU processing):
+macOS (Docker Desktop and Python 3.10+, CPU processing):
 
 ```bash
-docker compose -f docker-compose.yml -f docker-compose.mac.yml up -d --build
+./scripts/mac.sh start
 ```
 
 Ubuntu (CPU processing):
@@ -25,6 +25,28 @@ Compose uses `Dockerfile.ubuntu` by default. The macOS override selects
 and `relaydeck-portal:mac`), so one build does not overwrite the other image.
 Both run Linux containers and select the FFmpeg package for the target
 architecture automatically (ARM64 on Apple Silicon, AMD64 on x86 hosts).
+
+The Mac startup script also starts a native host monitor in the background.
+The portal shows the Mac's physical memory (8 GiB on an 8 GB Mac), live CPU
+usage, and Apple GPU utilization when macOS exposes it. CPU and Apple GPU
+share one unified memory pool; GPU memory is not added to RAM. Memory usage
+includes compressed memory's physical footprint and excludes reclaimable
+file cache. These are host totals, including other Mac applications.
+
+Metal/MPS remains host-only: RelayDeck's Linux container uses CPU processing.
+The edge agent panel continues to monitor processes inside the Linux VM.
+If the host monitor stops reporting for 15 seconds, the host panel shows
+offline rather than displaying VM memory as Mac memory.
+
+Stop the Mac containers and native monitor with:
+
+```bash
+./scripts/mac.sh stop
+```
+
+For manual startup, run `python3 scripts/mac_host_monitor.py --background`, then
+`docker compose -f docker-compose.yml -f docker-compose.mac.yml up -d --build`.
+Monitor logs and telemetry live in the ignored `.mac-monitor/` directory.
 
 NVIDIA GPU server (requires the host NVIDIA driver and NVIDIA Container Toolkit):
 

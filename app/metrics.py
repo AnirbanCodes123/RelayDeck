@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import os
 import re
 import shutil
@@ -683,6 +684,30 @@ def empty_snapshot(edge_agent_port: int = _DEFAULT_EDGE_AGENT_PORT) -> dict[str,
     }
 
 
+def read_mac_snapshot() -> dict[str, Any]:
+    """Read native host telemetry; never substitute Docker VM values for the Mac."""
+    offline = empty_snapshot()
+    offline.update(source="macos", status="offline")
+    offline["cpu"]["cores"] = None
+    offline["memory"]["unified"] = True
+    offline["gpu"]["unified"] = True
+    offline["gpu"]["note"] = "Start the Mac host monitor"
+    try:
+        path = Path(os.environ["HOST_METRICS_FILE"])
+        payload = json.loads(path.read_text(encoding="utf-8"))
+        age = time.time() - float(payload["ts"])
+        if payload.get("source") != "macos" or not -5 <= age <= 15:
+            return offline
+        for key in ("cpu", "memory", "gpu"):
+            if not isinstance(payload.get(key), dict):
+                return offline
+        if not payload["memory"].get("total_bytes"):
+            return offline
+        return {**payload, "status": "live"}
+    except (OSError, ValueError, KeyError, TypeError):
+        return offline
+
+
 class HostMonitor:
     def __init__(
         self,
@@ -701,6 +726,10 @@ class HostMonitor:
         self._prev_edge_ts: float | None = None
         self._edge_pids: list[int] = []
         self._snapshot = empty_snapshot(self.edge_agent_port)
+        if os.getenv("HOST_PLATFORM") == "macos":
+            native = read_mac_snapshot()
+            self._snapshot.update({key: native[key] for key in
+                                   ("ts", "source", "status", "cpu", "memory", "gpu")})
 
     def start(self) -> None:
         if self._thread and self._thread.is_alive():
@@ -720,6 +749,8 @@ class HostMonitor:
     def snapshot(self) -> dict[str, Any]:
         with self._lock:
             return {
+                "source": self._snapshot.get("source", "linux"),
+                "status": self._snapshot.get("status", "live"),
                 "ts": self._snapshot["ts"],
                 "cpu": dict(self._snapshot["cpu"]),
                 "memory": dict(self._snapshot["memory"]),
@@ -831,6 +862,11 @@ class HostMonitor:
             "gpu": gpu,
             "edge_agent": self._sample_edge_agent(memory, gpu),
         }
+        if os.getenv("HOST_PLATFORM") == "macos":
+            native = read_mac_snapshot()
+            # Edge process metrics still describe the Linux VM and its processes.
+            snapshot.update({key: native[key] for key in
+                             ("ts", "source", "status", "cpu", "memory", "gpu")})
         with self._lock:
             self._snapshot = snapshot
         return self.snapshot()
