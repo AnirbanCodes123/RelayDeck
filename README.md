@@ -8,11 +8,23 @@ Frigate, FFplay, OpenCV, VMS/NVR software, and custom AI applications.
 
 Docker Desktop or Docker Engine with Compose is required.
 
-CPU-only (macOS, machines without NVIDIA):
+macOS (Docker Desktop, CPU processing):
 
 ```bash
-docker compose up --build
+docker compose -f docker-compose.yml -f docker-compose.mac.yml up -d --build
 ```
+
+Ubuntu (CPU processing):
+
+```bash
+docker compose up -d --build
+```
+
+Compose uses `Dockerfile.ubuntu` by default. The macOS override selects
+`Dockerfile.mac`. The builds use separate image tags (`relaydeck-portal:ubuntu`
+and `relaydeck-portal:mac`), so one build does not overwrite the other image.
+Both run Linux containers and select the FFmpeg package for the target
+architecture automatically (ARM64 on Apple Silicon, AMD64 on x86 hosts).
 
 NVIDIA GPU server (requires the host NVIDIA driver and NVIDIA Container Toolkit):
 
@@ -69,8 +81,8 @@ docker compose -f docker-compose.yml -f docker-compose.gpu.yml exec portal ffmpe
 
 RelayDeck performs a real one-frame NVENC test and reports the detected GPU in
 the portal. If NVIDIA GPU is selected but NVENC cannot be opened, the stream
-automatically falls back to CPU transcoding. The normal `docker compose up`
-command remains usable on machines without a GPU.
+automatically falls back to CPU transcoding. Use the CPU startup command
+for your host above on machines without a GPU.
 
 Uploaded files and the SQLite stream registry live in the `relaydeck-data`
 Docker volume. Streams that were running are restored after the application
@@ -145,6 +157,8 @@ server/laptop IP so the URLs are usable from other computers:
 ```bash
 RTSP_PUBLIC_HOST=192.168.1.50 docker compose up -d
 ```
+
+On macOS, also pass `-f docker-compose.yml -f docker-compose.mac.yml`.
 
 You can also put `RTSP_PUBLIC_HOST=192.168.1.50` in a `.env` file beside
 `docker-compose.yml`. Allow inbound TCP port `8554` for remote RTSP clients.

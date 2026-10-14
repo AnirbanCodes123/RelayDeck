@@ -1,0 +1,6 @@
+services:
+  portal:
+    image: relaydeck-portal:mac
+    build:
+      context: .
+      dockerfile: Dockerfile.mac
