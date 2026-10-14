@@ -348,10 +348,11 @@ h2 { margin: 0 0 4px; font-size: 18px; letter-spacing: -.035em; }
 .state-badge b { font: inherit; }
 .stream-row.live .state-badge { color: #09845a; background: #e5f7f0; }
 .stream-row.error .state-badge { color: #b84231; background: #ffefec; }
+.stream-row.preparing .state-badge { color: #996820; background: #fff4df; }
 .uptime-cell { color: #68717d; font: 8.5px var(--mono); }
 .row-actions { display: flex; align-items: center; justify-content: flex-end; gap: 5px; }
 .stream-toggle { height: 29px; min-width: 49px; padding: 0 8px; }
-.stream-row.live .stream-toggle, .stream-row.starting .stream-toggle { color: var(--red); }
+.stream-row.live .stream-toggle, .stream-row.starting .stream-toggle, .stream-row.preparing .stream-toggle { color: var(--red); }
 .more-button, .delete-button { width: 25px; height: 29px; color: #7f8792; background: transparent; border: 0; cursor: pointer; }
 .delete-button { font-size: 17px; }
 .delete-button:hover { color: var(--red); }
@@ -450,7 +451,7 @@ footer { max-width: 1128px; margin: auto; padding: 24px 0 35px; display: flex; j
 :root[data-theme="dark"] .stream-row.live :is(.state-badge, .stream-indicator) { background: #193b33; color: var(--green); }
 :root[data-theme="dark"] .stream-row.error :is(.state-badge, .stream-indicator) { background: #452c2d; color: var(--red); }
 :root[data-theme="dark"] .live-url-row small { color: var(--green); }
-:root[data-theme="dark"] .stream-row:is(.live, .starting) .stream-toggle,
+:root[data-theme="dark"] .stream-row:is(.live, .starting, .preparing) .stream-toggle,
 :root[data-theme="dark"] .delete-button:hover { color: var(--red); }
 :root[data-theme="dark"] .queue-item.uploading .queue-status { color: var(--orange); }
 :root[data-theme="dark"] .queue-item.done .queue-status { color: var(--green); }

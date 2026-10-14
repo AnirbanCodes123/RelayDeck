@@ -77,9 +77,9 @@ VLC's input/codecs preferences.
 ## NVIDIA GPU acceleration
 
 The upload queue provides **CPU** and **NVIDIA GPU** processing. Choosing
-**NVIDIA GPU** encodes every source with NVENC, including H.264/AAC files.
-**CPU** still stream-copies compatible H.264/AAC inputs and only transcodes
-other codecs with libx264.
+**NVIDIA GPU** prepares incompatible sources with NVENC. **CPU** prepares
+incompatible sources with libx264. H.264/AAC files are stream-copied with either
+selection; they do not need an encoder session.
 
 On an NVIDIA host, install the NVIDIA driver and NVIDIA Container Toolkit, then
 start RelayDeck with both Compose files so the portal container receives the GPU:
@@ -101,9 +101,9 @@ docker compose -f docker-compose.yml -f docker-compose.gpu.yml exec portal nvidi
 docker compose -f docker-compose.yml -f docker-compose.gpu.yml exec portal ffmpeg -hide_banner -encoders | grep nvenc
 ```
 
-RelayDeck performs a real one-frame NVENC test and reports the detected GPU in
-the portal. If NVIDIA GPU is selected but NVENC cannot be opened, the stream
-automatically falls back to CPU transcoding. Use the CPU startup command
+RelayDeck reports the detected GPU and whether FFmpeg includes NVENC. If
+NVENC fails while preparing a file, the queue retries that file once with CPU
+encoding. Use the CPU startup command
 for your host above on machines without a GPU.
 
 Uploaded files and the SQLite stream registry live in the `relaydeck-data`
@@ -114,14 +114,24 @@ and MediaMTX restart.
 
 RelayDeck probes every upload before starting it:
 
-- If **NVIDIA GPU** is selected and NVENC is available, every file is
-  transcoded with `h264_nvenc`.
-- If **CPU** is selected, H.264 video with AAC or no audio uses FFmpeg
-  stream-copy. RelayDeck converts copied H.264 NAL units to Annex B for
-  reliable RTP packetization. Other codecs use CPU H.264/AAC transcoding.
+- H.264 video with AAC or no audio uses FFmpeg stream-copy, including sources
+  previously saved with NVIDIA processing selected.
+- Other sources enter a single conversion queue. Each is converted once to a
+  cached H.264/AAC MP4, then published using stream-copy. AVI sources also go
+  through preparation to repair unreliable timestamps. The UI shows `preparing`
+  until a file is ready; pending streams are not counted as live.
+- Choosing NVIDIA uses `h264_nvenc` for preparation, with CPU fallback on
+  failure. Only one conversion runs at a time, avoiding many simultaneous
+  encoder sessions. Published streams do not occupy NVENC sessions.
+- Prepared files persist beside uploads in `.prepared/` inside the data volume.
+  They are reused after restart and removed when their stream is deleted.
+  Preparation takes time and requires space for both original and prepared
+  files. Original uploads are retained.
+- RelayDeck converts copied H.264 NAL units to Annex B for reliable RTP
+  packetization.
 
 The 80-stream limit is a process-management capacity, not a guarantee that
-every server can transcode 80 videos. Stream-copy publishers are lightweight,
+every server can serve 80 videos at any resolution or bitrate. Stream-copy publishers are lightweight,
 but memory, source disk throughput, outgoing network bandwidth, resolution,
 bitrate, and consumer count still matter. CPU transcoding should be treated as
 a limited fallback.
@@ -134,8 +144,8 @@ For a production rollout, load-test in stages:
 
 A practical starting host for 80 stream-copy publishers is 8 CPU cores, 16 GB
 RAM, SSD/NVMe storage, and network capacity above the sum of source bitrates.
-Transcoding requirements vary heavily; reduce `MAX_STREAMS` or pre-convert
-media to H.264/AAC when CPU utilization is high.
+Preparation speed varies with codec and hardware; wait for the conversion
+queue to finish before assessing the final number of live streams.
 
 ## Stream lifecycle
 
@@ -162,6 +172,9 @@ uvicorn app.main:app --reload --port 9009
 ## Configuration
 
 - `MAX_STREAMS` (`80`): maximum configured and concurrently active streams.
+- `PREPARE_VIDEOS` (`1`): convert incompatible sources once before publishing.
+  Set to `0` only for continuous live transcoding; GPU session and memory
+  limits then apply to every concurrent transcoded stream.
 - `MEDIAMTX_HOST` (`127.0.0.1`): MediaMTX hostname used by FFmpeg.
 - `MEDIAMTX_RTSP_PORT` (`8554`): MediaMTX RTSP port.
 - `RTSP_PUBLIC_HOST` (unset): use the hostname/IP from the RelayDeck request

@@ -1,0 +1,12 @@
+# Isolated test server only; no host ports are published by the test runner.
+logLevel: warn
+rtspTransports: [tcp]
+api: yes
+authInternalUsers:
+  - user: any
+    permissions:
+      - action: publish
+      - action: read
+      - action: api
+paths:
+  all_others:

@@ -66,7 +66,7 @@ def test_processing_engine_selection_uses_nvidia_when_available(
     assert resolve_processing_mode("transcode", "auto") == "nvidia"
     assert resolve_processing_mode("transcode", "nvidia") == "nvidia"
     assert resolve_processing_mode("transcode", "cpu") == "cpu"
-    assert resolve_processing_mode("copy", "nvidia") == "nvidia"
+    assert resolve_processing_mode("copy", "nvidia") == "copy"
     assert resolve_processing_mode("copy", "auto") == "copy"
     assert resolve_processing_mode("copy", "cpu") == "copy"
 

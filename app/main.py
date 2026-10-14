@@ -48,6 +48,7 @@ manager = StreamManager(
     mediamtx_port=int(os.getenv("MEDIAMTX_RTSP_PORT", "8554")),
     public_host=os.getenv("RTSP_PUBLIC_HOST", "").strip(),
     max_streams=MAX_STREAMS,
+    prepare_videos=os.getenv("PREPARE_VIDEOS", "1") == "1",
 )
 store = StreamStore(DATABASE_PATH)
 
@@ -221,7 +222,7 @@ async def start_stream(
         processing_mode = await asyncio.to_thread(
             resolve_processing_mode, media_mode, transcode_engine
         )
-        gpu_fallback = transcode_engine == "nvidia" and processing_mode != "nvidia"
+        gpu_fallback = transcode_engine == "nvidia" and media_mode != "copy" and processing_mode != "nvidia"
         state = manager.register(
             stream_id,
             destination,

@@ -9,13 +9,13 @@ import subprocess
 import threading
 import time
 from collections import deque
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from functools import lru_cache
 from pathlib import Path
 from typing import Any
 
 
-ACTIVE_STATUSES = {"starting", "live", "stopping"}
+ACTIVE_STATUSES = {"preparing", "starting", "live", "stopping"}
 logger = logging.getLogger(__name__)
 
 _nvidia_status_lock = threading.Lock()
@@ -132,6 +132,8 @@ def nvidia_gpu_status() -> dict[str, Any]:
 
 
 def resolve_processing_mode(media_mode: str, requested_engine: str) -> str:
+    if media_mode == "copy":
+        return "copy"
     gpu_available = nvidia_gpu_status()["available"]
     if requested_engine == "nvidia":
         if gpu_available:
@@ -204,6 +206,9 @@ class ManagedStream:
     error: str | None = None
     process: subprocess.Popen[str] | None = field(default=None, repr=False)
     logs: deque[str] = field(default_factory=lambda: deque(maxlen=100), repr=False)
+    publish_path: Path | None = field(default=None, repr=False)
+    preparation_engine: str | None = None
+    preparation_token: object | None = field(default=None, repr=False)
 
 
 class StreamManager:
@@ -215,11 +220,14 @@ class StreamManager:
         mediamtx_port: int = 8554,
         public_host: str = "localhost",
         max_streams: int = 80,
+        prepare_videos: bool = False,
     ) -> None:
         self.mediamtx_host = mediamtx_host
         self.mediamtx_port = mediamtx_port
         self.public_host = public_host
         self.max_streams = max_streams
+        self.prepare_videos = prepare_videos
+        self._prepare_lock = threading.Lock()
         self._streams: dict[str, ManagedStream] = {}
         self._names: dict[str, str] = {}
         self._lock = threading.RLock()
@@ -260,7 +268,9 @@ class StreamManager:
         with self._lock:
             stream = self._require(stream_id)
             self._names.pop(stream.stream_name, None)
-            return self._streams.pop(stream_id)
+            removed = self._streams.pop(stream_id)
+        self._remove_prepared_files(removed)
+        return removed
 
     def unregister_all(self) -> list[ManagedStream]:
         self.stop_all()
@@ -268,13 +278,22 @@ class StreamManager:
             streams = list(self._streams.values())
             self._streams.clear()
             self._names.clear()
-            return streams
+        for stream in streams:
+            self._remove_prepared_files(stream)
+        return streams
+
+    @staticmethod
+    def _remove_prepared_files(stream: ManagedStream) -> None:
+        for path in (stream.video_path.parent / ".prepared").glob(f"{stream.id}-*.mp4"):
+            path.unlink(missing_ok=True)
 
     def start(self, stream_id: str) -> dict[str, Any]:
         if not shutil.which("ffmpeg"):
             raise RuntimeError("FFmpeg is not installed or is not available on PATH.")
         with self._lock:
             stream = self._require(stream_id)
+            if stream.status == "preparing":
+                return self._serialize(stream)
             if stream.process and stream.process.poll() is None:
                 return self._serialize(stream)
             active_count = sum(
@@ -282,6 +301,16 @@ class StreamManager:
             )
             if active_count >= self.max_streams:
                 raise RuntimeError(f"Active stream capacity reached ({self.max_streams}).")
+            if self.prepare_videos and stream.processing_mode != "copy" and not stream.publish_path:
+                token = object()
+                stream.preparation_token = token
+                stream.status = "preparing"
+                stream.error = None
+                stream.started_at = None
+                stream.logs.clear()
+                threading.Thread(target=self._prepare_video, args=(stream_id, token),
+                                 daemon=True, name=f"prepare-{stream_id[:8]}").start()
+                return self._serialize(stream)
             command = self._build_command(stream)
             stream.logs.clear()
             stream.error = None
@@ -314,6 +343,84 @@ class StreamManager:
         ).start()
         return self.get(stream_id)
 
+    def _prepare_video(self, stream_id: str, token: object) -> None:
+        """Convert each source once, serially, then publish without an encoder."""
+        temporary: Path | None = None
+        try:
+            # A single conversion avoids NVENC session/VRAM exhaustion and CPU storms.
+            with self._prepare_lock:
+                with self._lock:
+                    stream = self._streams.get(stream_id)
+                    if not stream or stream.preparation_token is not token:
+                        return
+                # Repair previously saved GPU records for already compatible inputs.
+                if probe_processing_mode(stream.video_path) == "copy":
+                    ready = stream.video_path
+                    engine = "copy"
+                else:
+                    stat = stream.video_path.stat()
+                    directory = stream.video_path.parent / ".prepared"
+                    directory.mkdir(parents=True, exist_ok=True)
+                    ready = directory / f"{stream.id}-{stat.st_size}-{stat.st_mtime_ns}.mp4"
+                    engine = "cached"
+                    if not ready.is_file():
+                        temporary = ready.with_name(f"{ready.stem}-{id(token)}.tmp.mp4")
+                        engines = ["nvidia", "cpu"] if stream.processing_mode == "nvidia" else ["cpu"]
+                        for engine in engines:
+                            command = self._build_prepare_command(stream, engine, temporary)
+                            with self._lock:
+                                if stream.preparation_token is not token:
+                                    return
+                                process = subprocess.Popen(
+                                    command, stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
+                                    stderr=subprocess.PIPE, text=True, bufsize=1)
+                                stream.process = process
+                            if process.stderr:
+                                for line in process.stderr:
+                                    with self._lock:
+                                        if stream.preparation_token is token and line.strip():
+                                            stream.logs.append(line.strip())
+                            return_code = process.wait()
+                            with self._lock:
+                                if stream.preparation_token is not token:
+                                    return
+                                stream.process = None
+                            if return_code == 0:
+                                temporary.replace(ready)
+                                break
+                            temporary.unlink(missing_ok=True)
+                            if engine == "nvidia":
+                                logger.warning("GPU preparation failed for %s; retrying once on CPU", stream.stream_name)
+                            else:
+                                raise RuntimeError("\n".join(list(stream.logs)[-20:]) or "Video preparation failed.")
+                with self._lock:
+                    if stream.preparation_token is not token:
+                        return
+                    stream.publish_path = ready
+                    stream.preparation_engine = engine
+                    stream.status = "idle"
+                    self.start(stream_id)
+                    stream.preparation_token = None
+        except (OSError, RuntimeError, subprocess.SubprocessError) as exc:
+            with self._lock:
+                stream = self._streams.get(stream_id)
+                if stream and stream.preparation_token is token:
+                    stream.process = None
+                    stream.preparation_token = None
+                    stream.status = "error"
+                    stream.error = str(exc)
+                    logger.error("Video preparation failed for %s: %s", stream.stream_name, exc)
+        finally:
+            if temporary:
+                temporary.unlink(missing_ok=True)
+
+    def _build_prepare_command(self, stream: ManagedStream, engine: str, destination: Path) -> list[str]:
+        source = replace(stream, processing_mode=engine, publish_path=None, loop=False)
+        command = self._build_command(source)
+        command = command[:command.index("-avoid_negative_ts")]
+        command.remove("-re")
+        return command + ["-y", "-movflags", "+faststart", str(destination)]
+
     def _build_command(self, stream: ManagedStream) -> list[str]:
         publish_url = (
             f"rtsp://{self.mediamtx_host}:{self.mediamtx_port}/{stream.stream_name}"
@@ -324,6 +431,10 @@ class StreamManager:
             "-nostdin",
             "-loglevel",
             "warning",
+            "-filter_threads",
+            "1",
+            "-threads",
+            "1",
             "-fflags",
             "+genpts",
             "-re",
@@ -332,17 +443,18 @@ class StreamManager:
             command += ["-stream_loop", "-1"]
         command += [
             "-i",
-            str(stream.video_path),
+            str(stream.publish_path or stream.video_path),
             "-map",
             "0:v:0",
             "-map",
             "0:a?",
         ]
-        if stream.processing_mode != "copy":
+        mode = "copy" if stream.publish_path else stream.processing_mode
+        if mode != "copy":
             # AVI codecs such as MJPEG can carry odd-sized frames. Both H.264
             # encoders require even dimensions for yuv420p; pad rather than crop.
             command += ["-vf", "pad=ceil(iw/2)*2:ceil(ih/2)*2"]
-        if stream.processing_mode == "copy":
+        if mode == "copy":
             command += [
                 "-c:v",
                 "copy",
@@ -351,7 +463,7 @@ class StreamManager:
                 "-c:a",
                 "copy",
             ]
-        elif stream.processing_mode == "nvidia":
+        elif mode == "nvidia":
             command += [
                 "-c:v",
                 "h264_nvenc",
@@ -380,6 +492,8 @@ class StreamManager:
             command += [
                 "-c:v",
                 "libx264",
+                "-threads",
+                "2",
                 "-preset",
                 "veryfast",
                 "-tune",
@@ -455,6 +569,7 @@ class StreamManager:
     def stop(self, stream_id: str) -> dict[str, Any]:
         with self._lock:
             stream = self._require(stream_id)
+            stream.preparation_token = None
             process = stream.process
             if not process or process.poll() is not None:
                 stream.process = None
@@ -489,6 +604,11 @@ class StreamManager:
 
     def stop_all(self) -> list[dict[str, Any]]:
         with self._lock:
+            for stream in self._streams.values():
+                stream.preparation_token = None
+                if stream.status == "preparing" and not stream.process:
+                    stream.status = "idle"
+                    stream.error = None
             active = [
                 (stream, stream.process)
                 for stream in self._streams.values()
@@ -538,6 +658,7 @@ class StreamManager:
                 "total": len(statuses),
                 "live": statuses.count("live"),
                 "starting": statuses.count("starting"),
+                "preparing": statuses.count("preparing"),
                 "error": statuses.count("error"),
                 "idle": statuses.count("idle"),
                 "capacity": self.max_streams,
@@ -560,7 +681,8 @@ class StreamManager:
                 f"rtsp://{self.public_host}:{self.mediamtx_port}/{stream.stream_name}"
             ),
             "loop": stream.loop,
-            "processing_mode": stream.processing_mode,
+            "processing_mode": "copy" if stream.publish_path else stream.processing_mode,
+            "preparation_engine": stream.preparation_engine,
             "status": stream.status,
             "started_at": stream.started_at,
             "uptime_seconds": (

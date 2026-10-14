@@ -204,7 +204,7 @@ function renderQueue() {
       item.status === "uploading"
         ? "Uploading…"
         : item.status === "done"
-          ? "Published"
+          ? "Configured"
           : item.status === "failed"
             ? item.error || "Failed"
             : "Ready";
@@ -272,7 +272,7 @@ async function uploadAll() {
     notify("NVIDIA GPU was unavailable; affected streams are using CPU.", true);
   }
   else {
-    notify(`${pending.length} stream${pending.length === 1 ? "" : "s"} published.`);
+    notify(`${pending.length} stream${pending.length === 1 ? "" : "s"} configured. Videos needing conversion will publish when preparation finishes.`);
     queuedFiles = queuedFiles.filter((item) => item.status !== "done");
   }
   renderQueue();
@@ -282,7 +282,11 @@ async function uploadAll() {
 function renderSummary(data) {
   const aggregate = data.aggregate;
   $("#totalMetric").textContent = aggregate.total;
-  $("#liveMetric").textContent = aggregate.live + aggregate.starting;
+  $("#liveMetric").textContent = aggregate.live;
+  $("#liveMetric").title = `${aggregate.preparing || 0} preparing · ${aggregate.starting} starting`;
+  const pending = $("#pendingMetric");
+  pending.hidden = !(aggregate.preparing || aggregate.starting);
+  pending.textContent = `${aggregate.preparing || 0} preparing · ${aggregate.starting} starting`;
   $("#errorMetric").textContent = aggregate.error;
   $("#capacityUsed").textContent = aggregate.total;
   $("#capacityMax").textContent = ` / ${aggregate.capacity}`;
@@ -341,12 +345,15 @@ function renderStreams() {
     const onGpu = stream.processing_mode === "nvidia";
     const copied = stream.processing_mode === "copy";
     device.textContent = onGpu ? "NVIDIA GPU" : copied ? "Copy" : "CPU";
+    if (stream.preparation_engine && stream.preparation_engine !== "copy") {
+      device.title = `Prepared once using ${stream.preparation_engine}; publishing without re-encoding`;
+    }
     device.classList.toggle("nvidia", onGpu);
     device.classList.toggle("cpu", !onGpu && !copied);
     device.classList.toggle("copy", copied);
     node.querySelector(".state-badge b").textContent = stream.status;
     node.querySelector(".uptime-cell").textContent = formatUptime(stream.uptime_seconds);
-    const active = ["starting", "live", "stopping"].includes(stream.status);
+    const active = ["preparing", "starting", "live", "stopping"].includes(stream.status);
     const toggle = node.querySelector(".stream-toggle");
     toggle.textContent = active ? "Stop" : "Start";
     toggle.disabled = stream.status === "stopping";
