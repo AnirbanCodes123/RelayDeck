@@ -30,7 +30,7 @@ DATA_DIR = Path(os.getenv("DATA_DIR", BASE_DIR / "data"))
 UPLOAD_DIR = Path(os.getenv("UPLOAD_DIR", DATA_DIR / "uploads"))
 DATABASE_PATH = Path(os.getenv("DATABASE_PATH", DATA_DIR / "relaydeck.db"))
 MAX_UPLOAD_BYTES = int(os.getenv("MAX_UPLOAD_BYTES", 20 * 1024**3))
-MAX_STREAMS = int(os.getenv("MAX_STREAMS", "80"))
+MAX_STREAMS = int(os.getenv("MAX_STREAMS", "110"))
 ALLOWED_EXTENSIONS = {
     ".mp4",
     ".mkv",

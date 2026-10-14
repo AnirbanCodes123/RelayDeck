@@ -30,7 +30,7 @@ services:
       MEDIAMTX_RTSP_PORT: "8554"
       RTSP_PUBLIC_HOST: ${RTSP_PUBLIC_HOST:-}
       DATA_DIR: /app/data
-      MAX_STREAMS: "80"
+      MAX_STREAMS: "110"
       PREPARE_VIDEOS: "1"
       EDGE_AGENT_PORT: "9000"
       HOST_PROC: /host/proc

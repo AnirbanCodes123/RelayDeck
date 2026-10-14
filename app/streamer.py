@@ -219,7 +219,7 @@ class StreamManager:
         mediamtx_host: str = "127.0.0.1",
         mediamtx_port: int = 8554,
         public_host: str = "localhost",
-        max_streams: int = 80,
+        max_streams: int = 110,
         prepare_videos: bool = False,
     ) -> None:
         self.mediamtx_host = mediamtx_host

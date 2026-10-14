@@ -1,7 +1,7 @@
 # RelayDeck
 
 RelayDeck turns a library of local videos into independent RTSP camera feeds.
-It manages up to 80 FFmpeg publishers and routes them through MediaMTX for VLC,
+It manages up to 110 FFmpeg publishers and routes them through MediaMTX for VLC,
 Frigate, FFplay, OpenCV, VMS/NVR software, and custom AI applications.
 
 ## Start with Docker
@@ -130,8 +130,8 @@ RelayDeck probes every upload before starting it:
 - RelayDeck converts copied H.264 NAL units to Annex B for reliable RTP
   packetization.
 
-The 80-stream limit is a process-management capacity, not a guarantee that
-every server can serve 80 videos at any resolution or bitrate. Stream-copy publishers are lightweight,
+The 110-stream limit is a process-management capacity, not a guarantee that
+every server can serve 110 videos at any resolution or bitrate. Stream-copy publishers are lightweight,
 but memory, source disk throughput, outgoing network bandwidth, resolution,
 bitrate, and consumer count still matter. CPU transcoding should be treated as
 a limited fallback.
@@ -140,9 +140,9 @@ For a production rollout, load-test in stages:
 
 1. Publish 10 H.264/AAC files and verify stable playback.
 2. Increase to 40 while watching CPU, memory, disk reads, and network output.
-3. Increase to 80 only when the host retains sufficient headroom.
+3. Increase to 80, then 110, only when the host retains sufficient headroom.
 
-A practical starting host for 80 stream-copy publishers is 8 CPU cores, 16 GB
+A starting host for stream-copy deployments is 8 CPU cores, 16 GB
 RAM, SSD/NVMe storage, and network capacity above the sum of source bitrates.
 Preparation speed varies with codec and hardware; wait for the conversion
 queue to finish before assessing the final number of live streams.
@@ -171,7 +171,7 @@ uvicorn app.main:app --reload --port 9009
 
 ## Configuration
 
-- `MAX_STREAMS` (`80`): maximum configured and concurrently active streams.
+- `MAX_STREAMS` (`110`): maximum configured and concurrently active streams.
 - `PREPARE_VIDEOS` (`1`): convert incompatible sources once before publishing.
   Set to `0` only for continuous live transcoding; GPU session and memory
   limits then apply to every concurrent transcoded stream.

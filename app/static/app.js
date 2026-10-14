@@ -43,6 +43,7 @@ let uploading = false;
 let toastTimer;
 let gpuDefaultApplied = false;
 let metricsInFlight = false;
+let streamCapacity = 110;
 const METRIC_HISTORY = 40;
 const metricHistory = { cpu: [], ram: [], gpu: [], edgeCpu: [], edgeRam: [], edgeGpu: [] };
 
@@ -165,7 +166,7 @@ async function copyText(value) {
 }
 
 function addFiles(files) {
-  const remaining = Math.max(0, 80 - streams.length - queuedFiles.length);
+  const remaining = Math.max(0, streamCapacity - streams.length - queuedFiles.length);
   [...files]
     .filter((file) => file.type.startsWith("video/") || /\.(mkv|ts|m4v)$/i.test(file.name))
     .slice(0, remaining)
@@ -281,6 +282,7 @@ async function uploadAll() {
 
 function renderSummary(data) {
   const aggregate = data.aggregate;
+  streamCapacity = aggregate.capacity;
   $("#totalMetric").textContent = aggregate.total;
   $("#liveMetric").textContent = aggregate.live;
   $("#liveMetric").title = `${aggregate.preparing || 0} preparing · ${aggregate.starting} starting`;
