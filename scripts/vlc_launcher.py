@@ -30,7 +30,7 @@ def stream_url(uri: str) -> str:
     return url
 
 
-def vlc_command() -> list[str]:
+def vlc_command() -> list:
     executable = shutil.which("vlc")
     if executable:
         return [executable]
