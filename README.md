@@ -74,6 +74,31 @@ and visible H.264 slice corruption in VLC when many streams are active. If VLC
 is connecting through another RTSP server, enable **RTP over RTSP (TCP)** in
 VLC's input/codecs preferences.
 
+FFmpeg publishers limit RTP packets to 1200 bytes, below MediaMTX's default
+packet limit. This avoids the `RTP packets are too big ... remuxing them into
+smaller ones` message. That message reports automatic repacketization; by
+itself it does not establish that frames are corrupt.
+
+For an OpenCV/Python consumer, test the affected URL from the same Python
+environment as the consuming application:
+
+```bash
+python scripts/check_rtsp.py rtsp://SERVER_IP:8554/STREAM_NAME
+```
+
+This reader explicitly uses FFmpeg over TCP with software decoding, reads 120
+frames, and saves the last decoded frame to `/tmp/relaydeck-frame.png`. It
+prints the OpenCV version, backend, and frame dimensions. OpenCV must already
+be installed in that Python environment. Use `--frames 30` for a shorter check
+or `--snapshot /path/to/frame.png` to choose the output file.
+
+If the saved image looks correct but the application's image does not, inspect
+the application's colour conversions, resizing, frame sharing, and hardware
+decoder settings. OpenCV supplies BGR frames; `cv2.imshow` and `cv2.imwrite`
+accept BGR directly. Convert BGR to RGB once when passing a frame to a display
+that expects RGB. A successful read count alone does not prove visual quality;
+inspect the saved image as well.
+
 ## NVIDIA GPU acceleration
 
 The upload queue provides **CPU** and **NVIDIA GPU** processing. Choosing

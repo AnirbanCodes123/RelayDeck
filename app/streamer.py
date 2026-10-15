@@ -546,6 +546,11 @@ class StreamManager:
             "rtsp",
             "-rtsp_transport",
             "tcp",
+            # FFmpeg defaults to 1472 bytes, exceeding MediaMTX's 1452-byte
+            # packet limit (1440-byte RTP payload). Fragment at the publisher
+            # so the server can forward H.264 without repacketizing every feed.
+            "-pkt_size",
+            "1200",
             publish_url,
         ]
         return command
