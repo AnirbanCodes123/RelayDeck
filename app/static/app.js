@@ -45,6 +45,11 @@ let gpuDefaultApplied = false;
 let metricsInFlight = false;
 let streamCapacity = 110;
 const playbackRequests = new Set();
+const vlcOpenedStreams = new Set();
+try {
+  const saved = JSON.parse(sessionStorage.getItem("relaydeck-vlc-opened") || "[]");
+  if (Array.isArray(saved)) saved.filter((id) => typeof id === "string").forEach((id) => vlcOpenedStreams.add(id));
+} catch {}
 const METRIC_HISTORY = 40;
 const metricHistory = { cpu: [], ram: [], gpu: [], edgeCpu: [], edgeRam: [], edgeGpu: [] };
 
@@ -151,6 +156,8 @@ function runningStreams() {
 function configureVlcLink(node, stream) {
   const link = node.querySelector(".open-vlc");
   const playable = ["live", "starting"].includes(stream.status);
+  link.dataset.streamId = stream.id;
+  link.dataset.streamName = stream.stream_name;
   link.setAttribute("aria-label", `Open ${stream.stream_name} in VLC`);
   link.setAttribute("aria-disabled", String(!playable));
   link.tabIndex = playable ? 0 : -1;
@@ -161,8 +168,43 @@ function configureVlcLink(node, stream) {
   // A dedicated desktop handler selects VLC explicitly, regardless of the
   // default RTSP application. The user click preserves external-app activation.
   link.addEventListener("click", (event) => {
-    if (!playable) event.preventDefault();
+    if (!playable) {
+      event.preventDefault();
+      return;
+    }
+    vlcOpenedStreams.add(stream.id);
+    saveVlcHighlights();
+    updateVlcHighlights();
   });
+  node.querySelector(".clear-vlc-mark").addEventListener("click", () => {
+    vlcOpenedStreams.delete(stream.id);
+    saveVlcHighlights();
+    updateVlcHighlights();
+  });
+  updateVlcHighlight(link);
+}
+
+function saveVlcHighlights() {
+  try { sessionStorage.setItem("relaydeck-vlc-opened", JSON.stringify([...vlcOpenedStreams])); } catch {}
+}
+
+function updateVlcHighlight(link) {
+  const opened = vlcOpenedStreams.has(link.dataset.streamId) && link.getAttribute("aria-disabled") === "false";
+  link.classList.toggle("vlc-opened", opened);
+  link.querySelector("span").textContent = opened ? "VLC ✓" : "VLC";
+  link.title = opened
+    ? "Opened in VLC from this tab (playback is not monitored). Click to open another window."
+    : link.getAttribute("aria-disabled") === "false"
+      ? "Open a VLC window on this computer (requires the RelayDeck VLC handler)"
+      : "Start this stream to open it in VLC";
+  const clear = link.parentElement.querySelector(".clear-vlc-mark");
+  clear.hidden = !opened;
+  clear.title = "Clear the opened-in-VLC highlight (does not close VLC)";
+  clear.setAttribute("aria-label", "Clear VLC highlight for " + link.dataset.streamName);
+}
+
+function updateVlcHighlights() {
+  document.querySelectorAll(".open-vlc[data-stream-id]").forEach(updateVlcHighlight);
 }
 
 function configurePlaybackControls(node, stream) {
@@ -543,6 +585,11 @@ async function refreshStreams() {
     if (!response.ok) throw new Error("Status request failed");
     const data = await response.json();
     streams = data.streams;
+    const runningIds = new Set(runningStreams().map((stream) => stream.id));
+    for (const id of vlcOpenedStreams) {
+      if (!runningIds.has(id)) vlcOpenedStreams.delete(id);
+    }
+    saveVlcHighlights();
     renderSummary(data);
     renderStreams();
   } catch {

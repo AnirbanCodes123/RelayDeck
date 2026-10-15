@@ -94,6 +94,13 @@ needed on each browser computer, not on a remote/headless RelayDeck server.
 The dedicated installer currently supports Ubuntu/Linux desktops only.
 You can still copy an ordinary RTSP URL into VLC's **Open Network Stream**.
 
+After clicking **▶ VLC**, its button turns green with a checkmark in both UI
+views. The marker means a VLC launch was requested from this browser tab; it
+does not confirm playback or detect when VLC closes. Multiple opened streams
+can be marked. Markers survive page refreshes in the same tab and clear when
+the stream stops or is deleted. Use the small **×** beside a green VLC button
+to clear its marker manually after closing VLC.
+
 MediaMTX is configured for RTSP-over-TCP only. This prevents RTP packet loss
 and visible H.264 slice corruption in VLC when many streams are active. If VLC
 is connecting through another RTSP server, enable **RTP over RTSP (TCP)** in

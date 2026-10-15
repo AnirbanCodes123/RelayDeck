@@ -347,6 +347,11 @@ h2 { margin: 0 0 4px; font-size: 18px; letter-spacing: -.035em; }
 .open-vlc[href]:hover { background: var(--hover); border-color: var(--orange); }
 .open-vlc:focus-visible { outline: 2px solid var(--orange); outline-offset: 3px; }
 .open-vlc[aria-disabled="true"] { opacity: .45; cursor: not-allowed; }
+.open-vlc.vlc-opened[href] { color: var(--green); border-color: var(--green); background: rgba(18,165,114,.14); box-shadow: 0 0 0 1px rgba(18,165,114,.12); }
+.clear-vlc-mark { padding: 0 3px; min-height: 26px; border: 0; background: transparent; color: var(--muted); cursor: pointer; font-size: 15px; }
+.clear-vlc-mark:hover { color: var(--ink); }
+.clear-vlc-mark:focus-visible { outline: 2px solid var(--green); outline-offset: 2px; }
+.clear-vlc-mark[hidden] { display: none; }
 .live-url-row > .url-actions { flex-direction: row; align-items: center; gap: 8px; }
 .mode-badge, .device-badge, .state-badge { width: fit-content; padding: 5px 7px; border-radius: 4px; font: 500 8px var(--mono); text-transform: uppercase; white-space: nowrap; }
 .mode-badge { color: #5d6f8f; background: #edf1f8; }
