@@ -300,7 +300,7 @@ h2 { margin: 0 0 4px; font-size: 18px; letter-spacing: -.035em; }
 .live-url-list { border: 1px solid var(--line); border-radius: 9px; overflow: hidden; }
 .live-url-row {
   min-height: 58px; padding: 11px 14px; display: grid;
-  grid-template-columns: minmax(120px,.8fr) minmax(240px,1.6fr) 28px;
+  grid-template-columns: minmax(120px,.8fr) minmax(240px,1.6fr) auto;
   gap: 12px; align-items: center; background: var(--surface); border-bottom: 1px solid var(--line);
 }
 .live-url-row:last-child { border-bottom: 0; }
@@ -335,6 +335,12 @@ h2 { margin: 0 0 4px; font-size: 18px; letter-spacing: -.035em; }
 .endpoint-cell code { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--code); font: 8.5px var(--mono); }
 .copy-stream { flex: 0 0 20px; height: 20px; }
 .copy-stream svg { width: 13px; fill: none; stroke: currentColor; stroke-width: 1.6; }
+.open-vlc { flex: 0 0 auto; display: inline-flex; align-items: center; justify-content: center; gap: 4px; min-height: 26px; padding: 0 7px; border: 1px solid var(--line); border-radius: 5px; color: var(--orange); background: var(--soft); text-decoration: none; font: 600 9px var(--mono); white-space: nowrap; }
+.open-vlc svg { width: 12px; height: 12px; fill: currentColor; }
+.open-vlc[href]:hover { background: var(--hover); border-color: var(--orange); }
+.open-vlc:focus-visible { outline: 2px solid var(--orange); outline-offset: 3px; }
+.open-vlc[aria-disabled="true"] { opacity: .45; cursor: not-allowed; }
+.live-url-row > .url-actions { flex-direction: row; align-items: center; gap: 8px; }
 .mode-badge, .device-badge, .state-badge { width: fit-content; padding: 5px 7px; border-radius: 4px; font: 500 8px var(--mono); text-transform: uppercase; white-space: nowrap; }
 .mode-badge { color: #5d6f8f; background: #edf1f8; }
 .mode-badge.transcode { color: #92552e; background: #fff0e5; }
@@ -397,7 +403,7 @@ footer { max-width: 1128px; margin: auto; padding: 24px 0 35px; display: flex; j
   .stats > div:nth-child(-n+2) { border-bottom: 1px solid var(--line); }
   .host-monitor-grid { grid-template-columns: 1fr; }
   .url-toolbar { align-items: stretch; flex-direction: column; }
-  .live-url-row { grid-template-columns: 1fr 28px; }
+  .live-url-row { grid-template-columns: minmax(0,1fr) auto; }
   .live-url-row code { grid-column: 1 / -1; grid-row: 2; }
   .publish-card, .streams-section { padding: 21px; }
   .queue-item { grid-template-columns: 35px 1fr 28px; }

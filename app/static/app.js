@@ -147,6 +147,23 @@ function runningStreams() {
   return streams.filter((stream) => ["live", "starting"].includes(stream.status));
 }
 
+function configureVlcLink(node, stream) {
+  const link = node.querySelector(".open-vlc");
+  const playable = ["live", "starting"].includes(stream.status);
+  link.setAttribute("aria-label", `Open ${stream.stream_name} in VLC`);
+  link.setAttribute("aria-disabled", String(!playable));
+  link.tabIndex = playable ? 0 : -1;
+  link.title = playable
+    ? "Open in VLC on this computer (VLC must be the default RTSP app)"
+    : "Start this stream to open it in VLC";
+  if (playable) link.href = stream.rtsp_url;
+  // Keep the real RTSP URL and the user click so the browser can hand it
+  // directly to the OS protocol handler. Never launch VLC on the server.
+  link.addEventListener("click", (event) => {
+    if (!playable) event.preventDefault();
+  });
+}
+
 async function copyText(value) {
   try {
     await navigator.clipboard.writeText(value);
@@ -336,6 +353,7 @@ function renderStreams() {
     node.querySelector(".source-cell strong").textContent = stream.filename;
     node.querySelector(".source-cell small").textContent = `/${stream.stream_name}`;
     node.querySelector(".endpoint-cell code").textContent = stream.rtsp_url;
+    configureVlcLink(node, stream);
     const mode = node.querySelector(".mode-badge");
     mode.textContent = stream.processing_mode;
     mode.classList.toggle(
@@ -384,6 +402,7 @@ function renderLiveUrls() {
     node.querySelector("strong").textContent = stream.filename;
     node.querySelector("small").textContent = stream.status;
     node.querySelector("code").textContent = stream.rtsp_url;
+    configureVlcLink(node, stream);
     node.querySelector(".copy-stream").addEventListener("click", async () => {
       if (await copyText(stream.rtsp_url)) notify("RTSP URL copied.");
       else notify("Could not copy the RTSP URL.", true);

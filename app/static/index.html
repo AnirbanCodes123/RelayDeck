@@ -25,8 +25,8 @@
       href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=Manrope:wght@400;500;600;700&display=swap"
       rel="stylesheet"
     />
-    <link rel="stylesheet" href="/static/styles.css?v=11" />
-    <script src="/static/app.js?v=11" defer></script>
+    <link rel="stylesheet" href="/static/styles.css?v=12" />
+    <script src="/static/app.js?v=12" defer></script>
   </head>
   <body>
     <div class="ambient ambient-one"></div>
@@ -374,6 +374,10 @@
         </div>
         <div class="endpoint-cell">
           <code></code>
+          <a class="open-vlc" aria-label="Open in VLC">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m8 5 11 7-11 7z"/></svg>
+            <span>VLC</span>
+          </a>
           <button class="copy-stream icon-button" type="button" title="Copy URL">
             <svg viewBox="0 0 24 24"><rect x="8" y="8" width="11" height="11" rx="2"/><path d="M16 8V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h2"/></svg>
           </button>
@@ -402,9 +406,15 @@
           <small></small>
         </div>
         <code></code>
-        <button class="copy-stream icon-button" type="button" title="Copy URL">
-          <svg viewBox="0 0 24 24"><rect x="8" y="8" width="11" height="11" rx="2"/><path d="M16 8V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h2"/></svg>
-        </button>
+        <div class="url-actions">
+          <a class="open-vlc" aria-label="Open in VLC">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m8 5 11 7-11 7z"/></svg>
+            <span>VLC</span>
+          </a>
+          <button class="copy-stream icon-button" type="button" title="Copy URL">
+            <svg viewBox="0 0 24 24"><rect x="8" y="8" width="11" height="11" rx="2"/><path d="M16 8V6a2 2 0 0 0-2-2H6a2 2 0 0 0 2 2v8a2 2 0 0 0 2 2h2"/></svg>
+          </button>
+        </div>
       </article>
     </template>
   </body>

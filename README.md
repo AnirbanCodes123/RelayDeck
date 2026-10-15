@@ -69,6 +69,24 @@ Test a stream with:
 ffplay -rtsp_transport tcp rtsp://192.168.1.50:8554/camera-01
 ```
 
+Use the **▶ VLC** button beside a running URL in either the stream list or
+the running-URLs tab to open that exact RTSP feed in VLC. VLC opens on the
+computer running the browser. The browser may ask permission to open the
+external application. Stopped streams must be started before using this button.
+
+On an Ubuntu desktop with VLC installed, register VLC as the default RTSP
+application once, as your desktop user (without `sudo`):
+
+```bash
+xdg-mime default vlc.desktop x-scheme-handler/rtsp
+xdg-mime query default x-scheme-handler/rtsp
+```
+
+For a Snap or Flatpak installation, use that installation's VLC desktop-file
+ID instead of `vlc.desktop` (for example, `vlc_vlc.desktop` or
+`org.videolan.VLC.desktop`). If your browser blocks external-app launches,
+allow the launch prompt or copy the URL into VLC's **Open Network Stream**.
+
 MediaMTX is configured for RTSP-over-TCP only. This prevents RTP packet loss
 and visible H.264 slice corruption in VLC when many streams are active. If VLC
 is connecting through another RTSP server, enable **RTP over RTSP (TCP)** in
