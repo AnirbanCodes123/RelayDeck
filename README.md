@@ -78,7 +78,8 @@ VLC's input/codecs preferences.
 
 The upload queue provides **CPU** and **NVIDIA GPU** processing. Choosing
 **NVIDIA GPU** prepares incompatible sources with NVENC. **CPU** prepares
-incompatible sources with libx264. H.264/AAC files are stream-copied with either
+incompatible sources with libx264. Compatible 8-bit 4:2:0 H.264/AAC files without
+B-frames are stream-copied with either
 selection; they do not need an encoder session.
 
 On an NVIDIA host, install the NVIDIA driver and NVIDIA Container Toolkit, then
@@ -114,12 +115,18 @@ and MediaMTX restart.
 
 RelayDeck probes every upload before starting it:
 
-- H.264 video with AAC or no audio uses FFmpeg stream-copy, including sources
+- 8-bit 4:2:0 H.264 video without B-frames, with even dimensions and AAC or no
+  audio uses FFmpeg stream-copy, including sources
   previously saved with NVIDIA processing selected.
 - Other sources enter a single conversion queue. Each is converted once to a
   cached H.264/AAC MP4, then published using stream-copy. AVI sources also go
   through preparation to repair unreliable timestamps. The UI shows `preparing`
   until a file is ready; pending streams are not counted as live.
+- H.264 with B-frames, 10-bit, 4:2:2, or 4:4:4 pixels is also prepared as 8-bit YUV420
+  for RTSP player compatibility. Saved copy-mode streams are checked again on
+  startup. Prepared videos use closed GOPs with keyframes at least every two
+  seconds so new readers can recover quickly. Older preparation caches are
+  regenerated once when needed; uploads do not need to be added again.
 - Choosing NVIDIA uses `h264_nvenc` for preparation, with CPU fallback on
   failure. Only one conversion runs at a time, avoiding many simultaneous
   encoder sessions. Published streams do not occupy NVENC sessions.

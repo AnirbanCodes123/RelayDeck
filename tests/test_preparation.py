@@ -1,5 +1,10 @@
+import json
+import shutil
+import subprocess
 from pathlib import Path
 from unittest.mock import MagicMock, patch
+
+import pytest
 
 from app.streamer import StreamManager
 
@@ -28,6 +33,62 @@ def test_restored_gpu_source_is_copied_without_nvenc_if_compatible(tmp_path):
     command = manager._build_command(stream)
     assert "h264_nvenc" not in command
     assert command[command.index("-c:v") + 1] == "copy"
+
+
+@patch("app.streamer.threading.Thread.start")
+@patch("app.streamer.shutil.which", return_value="/usr/bin/ffmpeg")
+def test_restored_copy_records_are_rechecked_before_publishing(_which, _thread, tmp_path):
+    manager, stream, _ = preparing(tmp_path, mode="copy")
+    stream.status = "idle"
+    with patch("app.streamer.subprocess.Popen") as popen:
+        state = manager.start("one")
+    assert state["status"] == "preparing"
+    popen.assert_not_called()
+
+
+@pytest.mark.skipif(not shutil.which("ffmpeg"), reason="FFmpeg is required")
+@pytest.mark.parametrize("pixel_format", ["yuv444p", "yuv422p", "yuv420p10le"])
+def test_h264_preparation_preserves_colours_and_decodable_frames(tmp_path, pixel_format):
+    from app.streamer import probe_processing_mode
+
+    source = tmp_path / "source.mp4"
+    subprocess.run([
+        "ffmpeg", "-v", "error", "-f", "lavfi", "-i",
+        "testsrc2=size=160x120:rate=10", "-t", "2.5", "-c:v", "libx264",
+        "-pix_fmt", pixel_format, str(source),
+    ], capture_output=True, check=True, timeout=15)
+    assert probe_processing_mode(source) == "transcode"
+    manager = StreamManager(prepare_videos=True)
+    manager.register("one", source, source.name, "one", True, "copy")
+    stream = manager._streams["one"]
+    token = object()
+    stream.preparation_token = token
+    stream.status = "preparing"
+    with patch.object(manager, "start"):
+        manager._prepare_video("one", token)
+    assert stream.publish_path is not None, stream.error
+    assert probe_processing_mode(stream.publish_path) == "copy"
+    frames = []
+    for path in (source, stream.publish_path):
+        decoded = subprocess.run([
+            "ffmpeg", "-v", "error", "-xerror", "-i", str(path),
+            "-f", "rawvideo", "-pix_fmt", "rgb24", "-",
+        ], capture_output=True, check=True, timeout=15)
+        assert decoded.stderr == b""
+        assert len(decoded.stdout) == 25 * 160 * 120 * 3
+        frames.append(decoded.stdout)
+    # A shifted plane/stride or colour channel swap produces a large error.
+    colour_error = sum(abs(a - b) for a, b in zip(*frames)) / len(frames[0])
+    assert colour_error < 8
+    probe = subprocess.run([
+        "ffprobe", "-v", "error", "-select_streams", "v:0", "-show_frames",
+        "-show_entries", "frame=key_frame,best_effort_timestamp_time,pict_type",
+        "-of", "json", str(stream.publish_path),
+    ], capture_output=True, text=True, check=True, timeout=15)
+    decoded_frames = json.loads(probe.stdout)["frames"]
+    assert all(frame["pict_type"] != "B" for frame in decoded_frames)
+    assert any(frame["key_frame"] and float(frame["best_effort_timestamp_time"]) == 2
+               for frame in decoded_frames)
 
 
 def test_gpu_preparation_failure_falls_back_once_and_cache_survives_restart(tmp_path):

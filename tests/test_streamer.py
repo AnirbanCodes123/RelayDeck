@@ -13,8 +13,10 @@ from app.streamer import (
 )
 
 
-def probe_result(video_codec: str, audio_codec: str | None = None) -> MagicMock:
-    streams = [{"codec_type": "video", "codec_name": video_codec}]
+def probe_result(video_codec: str, audio_codec: str | None = None, **metadata) -> MagicMock:
+    streams = [{"codec_type": "video", "codec_name": video_codec,
+                "pix_fmt": "yuv420p", "width": 320, "height": 240,
+                "has_b_frames": 0, **metadata}]
     if audio_codec:
         streams.append({"codec_type": "audio", "codec_name": audio_codec})
     return MagicMock(stdout=json.dumps({"streams": streams}))
@@ -24,6 +26,18 @@ def probe_result(video_codec: str, audio_codec: str | None = None) -> MagicMock:
 def test_probe_selects_copy_for_h264_aac(run: MagicMock, tmp_path: Path) -> None:
     run.return_value = probe_result("h264", "aac")
     assert probe_processing_mode(tmp_path / "video.mp4") == "copy"
+
+
+@pytest.mark.parametrize("metadata", [
+    {"pix_fmt": "yuv444p"}, {"pix_fmt": "yuv422p"},
+    {"pix_fmt": "yuv420p10le"}, {"pix_fmt": None},
+    {"width": 321}, {"height": 241}, {"width": 0},
+    {"has_b_frames": 2}, {"has_b_frames": None},
+])
+@patch("app.streamer.subprocess.run")
+def test_incompatible_h264_is_normalized(run, tmp_path, metadata):
+    run.return_value = probe_result("h264", "aac", **metadata)
+    assert probe_processing_mode(tmp_path / "video.mp4") == "transcode"
 
 
 @patch("app.streamer.subprocess.run")
@@ -105,11 +119,13 @@ def test_unregister_all_clears_the_registry(tmp_path: Path) -> None:
 
 
 @patch("app.streamer.threading.Thread.start")
+@patch("app.streamer.probe_processing_mode", return_value="copy")
 @patch("app.streamer.shutil.which", return_value="/usr/bin/ffmpeg")
 @patch("app.streamer.subprocess.Popen")
 def test_stream_processes_have_independent_lifecycles(
     popen: MagicMock,
     _which: MagicMock,
+    _probe: MagicMock,
     _thread_start: MagicMock,
     tmp_path: Path,
 ) -> None:
@@ -139,6 +155,20 @@ def test_stream_processes_have_independent_lifecycles(
     second.terminate.assert_not_called()
     assert manager.get("one")["status"] == "idle"
     assert manager.get("two")["status"] == "starting"
+
+
+@patch("app.streamer.threading.Thread.start")
+@patch("app.streamer.probe_processing_mode", return_value="transcode")
+@patch("app.streamer.shutil.which", return_value="/usr/bin/ffmpeg")
+@patch("app.streamer.subprocess.Popen")
+def test_live_transcoding_repairs_saved_incompatible_copy_mode(popen, _which, _probe, _thread, tmp_path):
+    popen.return_value.poll.return_value = None
+    manager = StreamManager(prepare_videos=False)
+    manager.register("one", tmp_path / "high444.mp4", "high444.mp4", "one", True, "copy")
+    manager.start("one")
+    command = popen.call_args.args[0]
+    assert command[command.index("-c:v") + 1] == "libx264"
+    assert command[command.index("-pix_fmt") + 1] == "yuv420p"
 
 
 def test_nvidia_stream_builds_nvenc_command(tmp_path: Path) -> None:

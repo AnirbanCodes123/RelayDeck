@@ -147,7 +147,7 @@ def resolve_processing_mode(media_mode: str, requested_engine: str) -> str:
 
 
 def probe_processing_mode(video_path: Path) -> str:
-    """Return copy for RTSP-friendly H.264/AAC media, otherwise transcode."""
+    """Copy only 8-bit 4:2:0 H.264/AAC that common RTSP decoders support."""
     try:
         result = subprocess.run(
             [
@@ -155,7 +155,7 @@ def probe_processing_mode(video_path: Path) -> str:
                 "-v",
                 "error",
                 "-show_entries",
-                "stream=codec_type,codec_name",
+                "stream=codec_type,codec_name,pix_fmt,width,height,has_b_frames",
                 "-of",
                 "json",
                 str(video_path),
@@ -170,8 +170,8 @@ def probe_processing_mode(video_path: Path) -> str:
     except (OSError, subprocess.SubprocessError, json.JSONDecodeError) as exc:
         raise RuntimeError(f"Could not inspect the uploaded video: {exc}") from exc
 
-    video_codecs = [
-        stream.get("codec_name")
+    video_streams = [
+        stream
         for stream in streams
         if stream.get("codec_type") == "video"
     ]
@@ -180,15 +180,29 @@ def probe_processing_mode(video_path: Path) -> str:
         for stream in streams
         if stream.get("codec_type") == "audio"
     ]
-    if not video_codecs:
+    if not video_streams:
         raise RuntimeError("The selected file does not contain a video stream.")
     # H.264 in AVI can lack reliable presentation timestamps, especially with
     # B-frames. Decode/re-encode to create timestamps that remain valid on loops.
     if video_path.suffix.lower() == ".avi":
         return "transcode"
+    video = video_streams[0]
+    # H.264 alone does not imply player compatibility: High 10/4:2:2/4:4:4
+    # sources can produce coloured blocks or fail in hardware RTSP decoders.
+    compatible_video = (
+        video.get("codec_name") == "h264"
+        and video.get("pix_fmt") in {"yuv420p", "yuvj420p"}
+        # Reordered B-frames may refer to pictures preceding a reader's join
+        # point or a loop boundary. Normalize these files to closed, B-free GOPs.
+        and video.get("has_b_frames") == 0
+        and isinstance(video.get("width"), int)
+        and isinstance(video.get("height"), int)
+        and video["width"] > 0 and video["width"] % 2 == 0
+        and video["height"] > 0 and video["height"] % 2 == 0
+    )
     return (
         "copy"
-        if video_codecs[0] == "h264" and all(codec == "aac" for codec in audio_codecs)
+        if compatible_video and all(codec == "aac" for codec in audio_codecs)
         else "transcode"
     )
 
@@ -301,7 +315,9 @@ class StreamManager:
             )
             if active_count >= self.max_streams:
                 raise RuntimeError(f"Active stream capacity reached ({self.max_streams}).")
-            if self.prepare_videos and stream.processing_mode != "copy" and not stream.publish_path:
+            # Re-probe saved copy records too; older versions checked only the
+            # codec name and could persist incompatible H.264 pixel formats.
+            if self.prepare_videos and not stream.publish_path:
                 token = object()
                 stream.preparation_token = token
                 stream.status = "preparing"
@@ -311,6 +327,9 @@ class StreamManager:
                 threading.Thread(target=self._prepare_video, args=(stream_id, token),
                                  daemon=True, name=f"prepare-{stream_id[:8]}").start()
                 return self._serialize(stream)
+            if not self.prepare_videos and stream.processing_mode == "copy":
+                if probe_processing_mode(stream.video_path) != "copy":
+                    stream.processing_mode = "cpu"
             command = self._build_command(stream)
             stream.logs.clear()
             stream.error = None
@@ -361,7 +380,7 @@ class StreamManager:
                     stat = stream.video_path.stat()
                     directory = stream.video_path.parent / ".prepared"
                     directory.mkdir(parents=True, exist_ok=True)
-                    ready = directory / f"{stream.id}-{stat.st_size}-{stat.st_mtime_ns}.mp4"
+                    ready = directory / f"{stream.id}-v2-{stat.st_size}-{stat.st_mtime_ns}.mp4"
                     engine = "cached"
                     if not ready.is_file():
                         temporary = ready.with_name(f"{ready.stem}-{id(token)}.tmp.mp4")
@@ -481,8 +500,6 @@ class StreamManager:
                 "yuv420p",
                 "-g",
                 "50",
-                "-bf",
-                "0",
                 "-c:a",
                 "aac",
                 "-ar",
@@ -507,6 +524,19 @@ class StreamManager:
                 "-ar",
                 "44100",
             ]
+        if mode != "copy":
+            # Closed GOPs and regular IDRs let late/reconnecting readers recover
+            # without depending on reference frames from before they connected.
+            command += [
+                "-profile:v", "main",
+                "-bf", "0",
+                "-flags", "+cgop",
+                "-force_key_frames", "expr:gte(t,n_forced*2)",
+            ]
+            if mode == "nvidia":
+                command += ["-forced-idr", "1"]
+            else:
+                command += ["-x264-params", "repeat-headers=1:open-gop=0"]
         command += [
             "-avoid_negative_ts",
             "make_zero",
