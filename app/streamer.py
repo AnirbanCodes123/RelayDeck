@@ -382,7 +382,7 @@ class StreamManager:
                     stat = stream.video_path.stat()
                     directory = stream.video_path.parent / ".prepared"
                     directory.mkdir(parents=True, exist_ok=True)
-                    profile = "nvdec720-v1" if self.nvdec_compatibility else "v2"
+                    profile = "nvdec-native-v2" if self.nvdec_compatibility else "v2"
                     ready = directory / f"{stream.id}-{profile}-{stat.st_size}-{stat.st_mtime_ns}.mp4"
                     engine = "cached"
                     if not ready.is_file():
@@ -473,19 +473,12 @@ class StreamManager:
         ]
         mode = "copy" if stream.publish_path else stream.processing_mode
         if mode != "copy":
-            # AVI codecs such as MJPEG can carry odd-sized frames. Both H.264
-            # encoders require even dimensions for yuv420p; pad rather than crop.
             if self.nvdec_compatibility:
-                # Fix display geometry before publishing: rawvideo consumers
-                # allocate frames using dimensions probed on another connection.
-                # Use DAR to preserve even non-square-pixel source proportions.
-                filters = (
-                    "scale=w='max(2,trunc(min(1280,720*dar)/2)*2)':"
-                    "h='max(2,trunc(min(720,1280/dar)/2)*2)',"
-                    "setsar=1,pad=1280:720:(ow-iw)/2:(oh-ih)/2,"
-                    "fps=25,format=yuv420p"
-                )
+                # Preserve source width, height, and sample aspect ratio.
+                filters = "fps=25,format=yuv420p"
             else:
+                # Legacy AVI/MJPEG inputs may have odd dimensions; standard
+                # mode pads these to meet the encoders' yuv420p requirements.
                 filters = "pad=ceil(iw/2)*2:ceil(ih/2)*2"
             command += ["-vf", filters]
         if mode == "copy":
@@ -547,7 +540,9 @@ class StreamManager:
                                       else "expr:gte(t,n_forced*2)"),
             ]
             if self.nvdec_compatibility:
-                command += ["-level:v", "3.1", "-refs:v", "1",
+                # Let each encoder choose a level that supports the original
+                # dimensions; 720p Level 3.1 is invalid for larger sources.
+                command += ["-refs:v", "1",
                             "-maxrate:v", "4M", "-bufsize:v", "4M"]
             if mode == "nvidia":
                 command += ["-forced-idr", "1"]
@@ -734,7 +729,7 @@ class StreamManager:
             "loop": stream.loop,
             "processing_mode": "copy" if stream.publish_path else stream.processing_mode,
             "preparation_engine": stream.preparation_engine,
-            "output_profile": "nvdec-720p25" if self.nvdec_compatibility else "source",
+            "output_profile": "nvdec-native25" if self.nvdec_compatibility else "source",
             "status": stream.status,
             "started_at": stream.started_at,
             "uptime_seconds": (

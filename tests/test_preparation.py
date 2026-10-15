@@ -102,7 +102,7 @@ def test_nvdec_profile_normalizes_restored_copy_and_ignores_old_cache(tmp_path):
     manager = StreamManager(prepare_videos=True, nvdec_compatibility=True)
     manager.register("one", source, source.name, "one", True, "copy")
     stream = manager._streams["one"]
-    old_cache = tmp_path / ".prepared" / f"one-v2-{source.stat().st_size}-{source.stat().st_mtime_ns}.mp4"
+    old_cache = tmp_path / ".prepared" / f"one-nvdec720-v1-{source.stat().st_size}-{source.stat().st_mtime_ns}.mp4"
     old_cache.parent.mkdir()
     old_cache.write_bytes(b"old incompatible cache")
     token = object()
@@ -118,9 +118,9 @@ def test_nvdec_profile_normalizes_restored_copy_and_ignores_old_cache(tmp_path):
     ], capture_output=True, text=True, check=True, timeout=15)
     data = json.loads(info.stdout)
     video = data["streams"][0]
-    assert (video["width"], video["height"]) == (1280, 720)
+    assert (video["width"], video["height"]) == (2688, 1520)
     assert video["profile"] == "Constrained Baseline"
-    assert video["level"] == 31 and video["has_b_frames"] == 0
+    assert video["level"] >= 50 and video["has_b_frames"] == 0
     assert video["pix_fmt"] == "yuv420p" and video["sample_aspect_ratio"] == "1:1"
     assert video["r_frame_rate"] == "25/1"
     assert len(data["frames"]) == 30
@@ -131,11 +131,11 @@ def test_nvdec_profile_normalizes_restored_copy_and_ignores_old_cache(tmp_path):
     for path in (source, stream.publish_path):
         decoded = subprocess.run([
             "ffmpeg", "-v", "error", "-xerror", "-i", str(path), "-frames:v", "1",
-            "-vf", "scale=1280:720", "-pix_fmt", "rgb24", "-f", "rawvideo", "-",
+            "-pix_fmt", "rgb24", "-f", "rawvideo", "-",
         ], capture_output=True, check=True, timeout=15)
         assert decoded.stderr == b""
         colours.append(decoded.stdout)
-    assert len(colours[0]) == len(colours[1]) == 1280 * 720 * 3
+    assert len(colours[0]) == len(colours[1]) == 2688 * 1520 * 3
     assert sum(abs(a - b) for a, b in zip(*colours)) / len(colours[0]) < 8
     # Publishing the normalized file stays encoder-free.
     assert manager._build_command(stream)[manager._build_command(stream).index("-c:v") + 1] == "copy"

@@ -120,18 +120,22 @@ def test_compatibility_profile_with_edge_agent_rawvideo_options(tmp_path, cuda):
             command += ["-hwaccel", "cuda"]
         command += ["-i", f"rtsp://{host}:{port}/compat-bars", "-an", "-sn", "-dn",
                     "-vsync", "0", "-frames:v", "65", "-pix_fmt", "bgr24", "-f", "rawvideo", "-"]
-        result = subprocess.run(command, capture_output=True, timeout=30)
+        raw_frames = tmp_path / "frames.bgr"
+        with raw_frames.open("wb") as output:
+            result = subprocess.run(command, stdout=output, stderr=subprocess.PIPE, timeout=30)
         assert result.returncode == 0, result.stderr.decode()
         assert not result.stderr, result.stderr.decode()
-        size = 1280 * 720 * 3
-        assert len(result.stdout) == size * 65
+        size = 2688 * 1520 * 3
+        assert raw_frames.stat().st_size == size * 65
         reference = subprocess.run([
             "ffmpeg", "-v", "error", "-i", str(manager._streams["compat"].publish_path),
             "-frames:v", "1", "-pix_fmt", "bgr24", "-f", "rawvideo", "-",
         ], capture_output=True, check=True, timeout=15).stdout
         # Compare frames before and after multiple loops for plane/stride drift.
-        for number in (0, 32, 64):
-            frame = result.stdout[number * size:(number + 1) * size]
-            assert sum(abs(a - b) for a, b in zip(frame, reference)) / size < 2
+        with raw_frames.open("rb") as decoded:
+            for number in (0, 32, 64):
+                decoded.seek(number * size)
+                frame = decoded.read(size)
+                assert sum(abs(a - b) for a, b in zip(frame, reference)) / size < 2
     finally:
         manager.shutdown()
