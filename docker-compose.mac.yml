@@ -6,6 +6,7 @@ services:
       dockerfile: Dockerfile.mac
     environment:
       HOST_PLATFORM: macos
+      NVDEC_COMPATIBILITY: ${NVDEC_COMPATIBILITY:-0}
       HOST_METRICS_FILE: /mac-monitor/metrics.json
     volumes:
       - ./.mac-monitor:/mac-monitor:ro

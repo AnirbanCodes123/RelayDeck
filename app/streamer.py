@@ -235,12 +235,14 @@ class StreamManager:
         public_host: str = "localhost",
         max_streams: int = 110,
         prepare_videos: bool = False,
+        nvdec_compatibility: bool = False,
     ) -> None:
         self.mediamtx_host = mediamtx_host
         self.mediamtx_port = mediamtx_port
         self.public_host = public_host
         self.max_streams = max_streams
         self.prepare_videos = prepare_videos
+        self.nvdec_compatibility = nvdec_compatibility
         self._prepare_lock = threading.Lock()
         self._streams: dict[str, ManagedStream] = {}
         self._names: dict[str, str] = {}
@@ -328,7 +330,7 @@ class StreamManager:
                                  daemon=True, name=f"prepare-{stream_id[:8]}").start()
                 return self._serialize(stream)
             if not self.prepare_videos and stream.processing_mode == "copy":
-                if probe_processing_mode(stream.video_path) != "copy":
+                if self.nvdec_compatibility or probe_processing_mode(stream.video_path) != "copy":
                     stream.processing_mode = "cpu"
             command = self._build_command(stream)
             stream.logs.clear()
@@ -373,14 +375,15 @@ class StreamManager:
                     if not stream or stream.preparation_token is not token:
                         return
                 # Repair previously saved GPU records for already compatible inputs.
-                if probe_processing_mode(stream.video_path) == "copy":
+                if not self.nvdec_compatibility and probe_processing_mode(stream.video_path) == "copy":
                     ready = stream.video_path
                     engine = "copy"
                 else:
                     stat = stream.video_path.stat()
                     directory = stream.video_path.parent / ".prepared"
                     directory.mkdir(parents=True, exist_ok=True)
-                    ready = directory / f"{stream.id}-v2-{stat.st_size}-{stat.st_mtime_ns}.mp4"
+                    profile = "nvdec720-v1" if self.nvdec_compatibility else "v2"
+                    ready = directory / f"{stream.id}-{profile}-{stat.st_size}-{stat.st_mtime_ns}.mp4"
                     engine = "cached"
                     if not ready.is_file():
                         temporary = ready.with_name(f"{ready.stem}-{id(token)}.tmp.mp4")
@@ -472,7 +475,19 @@ class StreamManager:
         if mode != "copy":
             # AVI codecs such as MJPEG can carry odd-sized frames. Both H.264
             # encoders require even dimensions for yuv420p; pad rather than crop.
-            command += ["-vf", "pad=ceil(iw/2)*2:ceil(ih/2)*2"]
+            if self.nvdec_compatibility:
+                # Fix display geometry before publishing: rawvideo consumers
+                # allocate frames using dimensions probed on another connection.
+                # Use DAR to preserve even non-square-pixel source proportions.
+                filters = (
+                    "scale=w='max(2,trunc(min(1280,720*dar)/2)*2)':"
+                    "h='max(2,trunc(min(720,1280/dar)/2)*2)',"
+                    "setsar=1,pad=1280:720:(ow-iw)/2:(oh-ih)/2,"
+                    "fps=25,format=yuv420p"
+                )
+            else:
+                filters = "pad=ceil(iw/2)*2:ceil(ih/2)*2"
+            command += ["-vf", filters]
         if mode == "copy":
             command += [
                 "-c:v",
@@ -498,8 +513,6 @@ class StreamManager:
                 "0",
                 "-pix_fmt",
                 "yuv420p",
-                "-g",
-                "50",
                 "-c:a",
                 "aac",
                 "-ar",
@@ -517,8 +530,6 @@ class StreamManager:
                 "zerolatency",
                 "-pix_fmt",
                 "yuv420p",
-                "-g",
-                "50",
                 "-c:a",
                 "aac",
                 "-ar",
@@ -528,11 +539,16 @@ class StreamManager:
             # Closed GOPs and regular IDRs let late/reconnecting readers recover
             # without depending on reference frames from before they connected.
             command += [
-                "-profile:v", "main",
+                "-profile:v", "baseline" if self.nvdec_compatibility else "main",
+                "-g", "25" if self.nvdec_compatibility else "50",
                 "-bf", "0",
                 "-flags", "+cgop",
-                "-force_key_frames", "expr:gte(t,n_forced*2)",
+                "-force_key_frames", ("expr:gte(t,n_forced)" if self.nvdec_compatibility
+                                      else "expr:gte(t,n_forced*2)"),
             ]
+            if self.nvdec_compatibility:
+                command += ["-level:v", "3.1", "-refs:v", "1",
+                            "-maxrate:v", "4M", "-bufsize:v", "4M"]
             if mode == "nvidia":
                 command += ["-forced-idr", "1"]
             else:
@@ -718,6 +734,7 @@ class StreamManager:
             "loop": stream.loop,
             "processing_mode": "copy" if stream.publish_path else stream.processing_mode,
             "preparation_engine": stream.preparation_engine,
+            "output_profile": "nvdec-720p25" if self.nvdec_compatibility else "source",
             "status": stream.status,
             "started_at": stream.started_at,
             "uptime_seconds": (

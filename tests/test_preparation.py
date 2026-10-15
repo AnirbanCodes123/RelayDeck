@@ -91,6 +91,56 @@ def test_h264_preparation_preserves_colours_and_decodable_frames(tmp_path, pixel
                for frame in decoded_frames)
 
 
+@pytest.mark.skipif(not shutil.which("ffmpeg"), reason="FFmpeg is required")
+def test_nvdec_profile_normalizes_restored_copy_and_ignores_old_cache(tmp_path):
+    source = tmp_path / "camera.mp4"
+    subprocess.run([
+        "ffmpeg", "-v", "error", "-f", "lavfi", "-i",
+        "smptebars=size=2688x1520:rate=5", "-t", "1.2", "-c:v", "libx264",
+        "-preset", "ultrafast", "-pix_fmt", "yuv420p", "-bf", "0", str(source),
+    ], capture_output=True, check=True, timeout=20)
+    manager = StreamManager(prepare_videos=True, nvdec_compatibility=True)
+    manager.register("one", source, source.name, "one", True, "copy")
+    stream = manager._streams["one"]
+    old_cache = tmp_path / ".prepared" / f"one-v2-{source.stat().st_size}-{source.stat().st_mtime_ns}.mp4"
+    old_cache.parent.mkdir()
+    old_cache.write_bytes(b"old incompatible cache")
+    token = object()
+    stream.preparation_token = token
+    stream.status = "preparing"
+    with patch.object(manager, "start"):
+        manager._prepare_video("one", token)
+    assert stream.publish_path is not None, stream.error
+    assert stream.publish_path != source and stream.publish_path != old_cache
+    info = subprocess.run([
+        "ffprobe", "-v", "error", "-select_streams", "v:0", "-show_streams",
+        "-show_frames", "-of", "json", str(stream.publish_path),
+    ], capture_output=True, text=True, check=True, timeout=15)
+    data = json.loads(info.stdout)
+    video = data["streams"][0]
+    assert (video["width"], video["height"]) == (1280, 720)
+    assert video["profile"] == "Constrained Baseline"
+    assert video["level"] == 31 and video["has_b_frames"] == 0
+    assert video["pix_fmt"] == "yuv420p" and video["sample_aspect_ratio"] == "1:1"
+    assert video["r_frame_rate"] == "25/1"
+    assert len(data["frames"]) == 30
+    assert all(frame["pict_type"] != "B" for frame in data["frames"])
+    assert any(frame["key_frame"] and float(frame["best_effort_timestamp_time"]) == 1
+               for frame in data["frames"])
+    colours = []
+    for path in (source, stream.publish_path):
+        decoded = subprocess.run([
+            "ffmpeg", "-v", "error", "-xerror", "-i", str(path), "-frames:v", "1",
+            "-vf", "scale=1280:720", "-pix_fmt", "rgb24", "-f", "rawvideo", "-",
+        ], capture_output=True, check=True, timeout=15)
+        assert decoded.stderr == b""
+        colours.append(decoded.stdout)
+    assert len(colours[0]) == len(colours[1]) == 1280 * 720 * 3
+    assert sum(abs(a - b) for a, b in zip(*colours)) / len(colours[0]) < 8
+    # Publishing the normalized file stays encoder-free.
+    assert manager._build_command(stream)[manager._build_command(stream).index("-c:v") + 1] == "copy"
+
+
 def test_gpu_preparation_failure_falls_back_once_and_cache_survives_restart(tmp_path):
     manager, stream, token = preparing(tmp_path)
     commands = []

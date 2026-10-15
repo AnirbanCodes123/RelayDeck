@@ -138,7 +138,27 @@ and MediaMTX restart.
 
 ## Scaling model
 
-RelayDeck probes every upload before starting it:
+Ubuntu Compose enables `NVDEC_COMPATIBILITY=1` for CUDA consumers such as
+`edge_agent` with `ffmpeg_cuda`. Every source, including saved copy-mode
+records, is prepared once into a fixed 1280×720, 25 fps stream. The output uses
+8-bit YUV420 H.264 Baseline Level 3.1, one reference frame, no B-frames, a
+one-second IDR interval, and a 4 Mbps bitrate ceiling. Aspect ratio is preserved
+with padding. This reduces resolution for larger inputs and changes the frame
+rate; original uploaded files are retained. The RTSP URLs stay the same.
+
+The compatibility profile has its own cache, so older prepared files are not
+reused. Wait for `preparing` to finish after rebuilding, then reconnect the
+consumer so it probes the new dimensions. An already-open rawvideo reader may
+still be allocating frames for the previous 2688×1520 source. No edge-agent
+configuration changes are required. `GET /api/streams` reports
+`output_profile: "nvdec-720p25"` when the server profile is active.
+
+macOS Compose defaults to `NVDEC_COMPATIBILITY=0`. Set
+`NVDEC_COMPATIBILITY=0` in `.env` to retain source resolution and the standard
+copy/preparation policy below on Ubuntu too. Native `uvicorn` startup also
+defaults to `0`; export `NVDEC_COMPATIBILITY=1` to enable the profile there.
+
+With compatibility mode disabled, RelayDeck probes every upload:
 
 - 8-bit 4:2:0 H.264 video without B-frames, with even dimensions and AAC or no
   audio uses FFmpeg stream-copy, including sources
@@ -207,6 +227,9 @@ uvicorn app.main:app --reload --port 9009
 - `PREPARE_VIDEOS` (`1`): convert incompatible sources once before publishing.
   Set to `0` only for continuous live transcoding; GPU session and memory
   limits then apply to every concurrent transcoded stream.
+- `NVDEC_COMPATIBILITY` (Ubuntu Compose: `1`, macOS/native: `0`): prepare every
+  source as 720p25 H.264 Baseline for CUDA readers. With `PREPARE_VIDEOS=0`,
+  this profile requires continuous transcoding instead of cached preparation.
 - `MEDIAMTX_HOST` (`127.0.0.1`): MediaMTX hostname used by FFmpeg.
 - `MEDIAMTX_RTSP_PORT` (`8554`): MediaMTX RTSP port.
 - `RTSP_PUBLIC_HOST` (unset): use the hostname/IP from the RelayDeck request

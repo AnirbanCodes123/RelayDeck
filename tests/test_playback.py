@@ -90,3 +90,48 @@ def test_opencv_reader_preserves_colours_across_loops(tmp_path, pixel_format):
         assert np.abs(frame.astype(float) - expected.astype(float)).mean() < 8
     finally:
         manager.shutdown()
+
+
+@pytest.mark.skipif(not os.getenv("MEDIAMTX_TEST_HOST"), reason="Isolated MediaMTX required")
+@pytest.mark.parametrize("cuda", [False, True])
+def test_compatibility_profile_with_edge_agent_rawvideo_options(tmp_path, cuda):
+    if cuda and not os.getenv("NVDEC_TEST"):
+        pytest.skip("NVIDIA GPU and CUDA-enabled FFmpeg required")
+    source = tmp_path / "camera.mp4"
+    subprocess.run([
+        "ffmpeg", "-v", "error", "-f", "lavfi", "-i",
+        "smptebars=size=2688x1520:rate=5", "-t", "1.2", "-c:v", "libx264",
+        "-preset", "ultrafast", "-pix_fmt", "yuv420p", str(source),
+    ], capture_output=True, check=True, timeout=20)
+    host = os.environ["MEDIAMTX_TEST_HOST"]
+    port = int(os.getenv("MEDIAMTX_TEST_RTSP_PORT", "8554"))
+    manager = StreamManager(mediamtx_host=host, mediamtx_port=port,
+                            prepare_videos=True, nvdec_compatibility=True)
+    try:
+        manager.register("compat", source, source.name, "compat-bars", True, "copy")
+        manager.start("compat")
+        deadline = time.monotonic() + 20
+        while manager.get("compat")["status"] in {"preparing", "starting"} and time.monotonic() < deadline:
+            time.sleep(.1)
+        assert manager.get("compat")["status"] == "live", manager.get("compat")
+        command = ["ffmpeg", "-v", "error", "-rtsp_transport", "tcp",
+                   "-fflags", "+genpts+nobuffer+discardcorrupt", "-flags", "low_delay"]
+        if cuda:
+            command += ["-hwaccel", "cuda"]
+        command += ["-i", f"rtsp://{host}:{port}/compat-bars", "-an", "-sn", "-dn",
+                    "-vsync", "0", "-frames:v", "65", "-pix_fmt", "bgr24", "-f", "rawvideo", "-"]
+        result = subprocess.run(command, capture_output=True, timeout=30)
+        assert result.returncode == 0, result.stderr.decode()
+        assert not result.stderr, result.stderr.decode()
+        size = 1280 * 720 * 3
+        assert len(result.stdout) == size * 65
+        reference = subprocess.run([
+            "ffmpeg", "-v", "error", "-i", str(manager._streams["compat"].publish_path),
+            "-frames:v", "1", "-pix_fmt", "bgr24", "-f", "rawvideo", "-",
+        ], capture_output=True, check=True, timeout=15).stdout
+        # Compare frames before and after multiple loops for plane/stride drift.
+        for number in (0, 32, 64):
+            frame = result.stdout[number * size:(number + 1) * size]
+            assert sum(abs(a - b) for a, b in zip(frame, reference)) / size < 2
+    finally:
+        manager.shutdown()

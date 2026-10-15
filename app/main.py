@@ -49,6 +49,7 @@ manager = StreamManager(
     public_host=os.getenv("RTSP_PUBLIC_HOST", "").strip(),
     max_streams=MAX_STREAMS,
     prepare_videos=os.getenv("PREPARE_VIDEOS", "1") == "1",
+    nvdec_compatibility=os.getenv("NVDEC_COMPATIBILITY", "0") == "1",
 )
 store = StreamStore(DATABASE_PATH)
 
@@ -219,6 +220,8 @@ async def start_stream(
 
     try:
         media_mode = await asyncio.to_thread(probe_processing_mode, destination)
+        if manager.nvdec_compatibility:
+            media_mode = "transcode"
         processing_mode = await asyncio.to_thread(
             resolve_processing_mode, media_mode, transcode_engine
         )
