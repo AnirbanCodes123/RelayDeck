@@ -50,6 +50,7 @@ manager = StreamManager(
     max_streams=MAX_STREAMS,
     prepare_videos=os.getenv("PREPARE_VIDEOS", "1") == "1",
     nvdec_compatibility=os.getenv("NVDEC_COMPATIBILITY", "0") == "1",
+    playback_controls=os.getenv("PLAYBACK_CONTROLS", "1") == "1",
 )
 store = StreamStore(DATABASE_PATH)
 
@@ -290,6 +291,17 @@ async def stop_stream(stream_id: str, request: Request) -> dict:
     store.set_desired_running(stream_id, False)
     state = await asyncio.to_thread(manager.stop, stream_id)
     return public_stream(state, request)
+
+
+@app.post("/api/streams/{stream_id}/playback/{action}")
+async def control_playback(stream_id: str, action: str, request: Request) -> dict:
+    require_stream(stream_id, include_logs=False)
+    if action not in {"pause", "resume", "forward"}:
+        raise HTTPException(status_code=422, detail="Use pause, resume, or forward.")
+    try:
+        return public_stream(manager.playback_action(stream_id, action), request)
+    except RuntimeError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
 
 
 @app.delete("/api/streams/{stream_id}")

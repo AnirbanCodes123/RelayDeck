@@ -14,6 +14,8 @@ from functools import lru_cache
 from pathlib import Path
 from typing import Any
 
+from app.playback import Playback
+
 
 ACTIVE_STATUSES = {"preparing", "starting", "live", "stopping"}
 logger = logging.getLogger(__name__)
@@ -223,6 +225,7 @@ class ManagedStream:
     publish_path: Path | None = field(default=None, repr=False)
     preparation_engine: str | None = None
     preparation_token: object | None = field(default=None, repr=False)
+    playback: Playback | None = field(default=None, repr=False)
 
 
 class StreamManager:
@@ -236,13 +239,15 @@ class StreamManager:
         max_streams: int = 110,
         prepare_videos: bool = False,
         nvdec_compatibility: bool = False,
+        playback_controls: bool = False,
     ) -> None:
         self.mediamtx_host = mediamtx_host
         self.mediamtx_port = mediamtx_port
         self.public_host = public_host
         self.max_streams = max_streams
-        self.prepare_videos = prepare_videos
-        self.nvdec_compatibility = nvdec_compatibility
+        self.playback_controls = playback_controls
+        self.prepare_videos = prepare_videos or playback_controls
+        self.nvdec_compatibility = nvdec_compatibility or playback_controls
         self._prepare_lock = threading.Lock()
         self._streams: dict[str, ManagedStream] = {}
         self._names: dict[str, str] = {}
@@ -338,7 +343,7 @@ class StreamManager:
             try:
                 process = subprocess.Popen(
                     command,
-                    stdin=subprocess.DEVNULL,
+                    stdin=subprocess.PIPE if self.playback_controls else subprocess.DEVNULL,
                     stdout=subprocess.DEVNULL,
                     stderr=subprocess.PIPE,
                     text=True,
@@ -349,6 +354,9 @@ class StreamManager:
             stream.process = process
             stream.status = "starting"
             stream.started_at = time.time()
+            if self.playback_controls:
+                stream.playback = Playback(stream.publish_path, stream.loop, process.stdin.buffer)
+                stream.playback.start()
 
         threading.Thread(
             target=self._capture_output,
@@ -461,11 +469,15 @@ class StreamManager:
             "+genpts",
             "-re",
         ]
-        if stream.loop:
+        controlled = self.playback_controls and stream.publish_path is not None
+        if controlled:
+            command.remove("-re")
+            command += ["-probesize", "32768", "-analyzeduration", "0", "-f", "mpegts"]
+        if stream.loop and not controlled:
             command += ["-stream_loop", "-1"]
         command += [
             "-i",
-            str(stream.publish_path or stream.video_path),
+            "pipe:0" if controlled else str(stream.publish_path or stream.video_path),
             "-map",
             "0:v:0",
             "-map",
@@ -488,7 +500,7 @@ class StreamManager:
                 "-bsf:v",
                 "h264_mp4toannexb",
                 "-c:a",
-                "copy",
+                "aac" if controlled else "copy",
             ]
         elif mode == "nvidia":
             command += [
@@ -587,11 +599,22 @@ class StreamManager:
                         if stream and stream.process is process:
                             stream.logs.append(clean_line)
         return_code = process.wait()
+        playback = None
+        with self._lock:
+            current = self._streams.get(stream_id)
+            if current and current.process is process:
+                playback = current.playback
+        if playback:
+            playback.stop()
+            playback.join()
         with self._lock:
             stream = self._streams.get(stream_id)
             if not stream or stream.process is not process:
                 return
             stream.process = None
+            if playback and playback.error:
+                stream.logs.append(f"Playback: {playback.error}")
+                return_code = return_code or 1
             if stream.status == "stopping":
                 stream.status = "idle"
                 stream.started_at = None
@@ -616,12 +639,16 @@ class StreamManager:
         with self._lock:
             stream = self._require(stream_id)
             stream.preparation_token = None
+            playback = stream.playback
+            if playback:
+                playback.stop()
             process = stream.process
             if not process or process.poll() is not None:
                 stream.process = None
                 stream.status = "idle"
                 stream.started_at = None
                 stream.error = None
+                stream.playback = None
                 return self._serialize(stream)
             stream.status = "stopping"
             process.terminate()
@@ -630,6 +657,8 @@ class StreamManager:
         except subprocess.TimeoutExpired:
             process.kill()
             process.wait(timeout=2)
+        if playback:
+            playback.join()
         with self._lock:
             stream = self._require(stream_id)
             if stream.process is process:
@@ -637,6 +666,22 @@ class StreamManager:
             stream.status = "idle"
             stream.started_at = None
             stream.error = None
+            stream.playback = None
+            return self._serialize(stream)
+
+    def playback_action(self, stream_id: str, action: str) -> dict[str, Any]:
+        with self._lock:
+            stream = self._require(stream_id)
+            if not stream.playback or not stream.process or stream.process.poll() is not None or stream.status not in {"starting", "live"}:
+                raise RuntimeError("Start this stream before controlling playback.")
+            if action == "pause":
+                stream.playback.pause(True)
+            elif action == "resume":
+                stream.playback.pause(False)
+            elif action == "forward":
+                stream.playback.forward(10)
+            else:
+                raise RuntimeError("Unknown playback action.")
             return self._serialize(stream)
 
     def start_all(self) -> list[dict[str, Any]]:
@@ -661,6 +706,8 @@ class StreamManager:
                 if stream.process and stream.process.poll() is None
             ]
             for stream, process in active:
+                if stream.playback:
+                    stream.playback.stop()
                 stream.status = "stopping"
                 process.terminate()
         deadline = time.monotonic() + 6
@@ -670,6 +717,9 @@ class StreamManager:
                 process.wait(timeout=timeout)
             except subprocess.TimeoutExpired:
                 process.kill()
+        for stream, _ in active:
+            if stream.playback:
+                stream.playback.join()
         with self._lock:
             for stream, process in active:
                 if stream.process is process:
@@ -677,6 +727,7 @@ class StreamManager:
                 stream.status = "idle"
                 stream.started_at = None
                 stream.error = None
+                stream.playback = None
             return [self._serialize(item) for item in self._streams.values()]
 
     def get(self, stream_id: str, include_logs: bool = True) -> dict[str, Any]:
@@ -730,6 +781,8 @@ class StreamManager:
             "processing_mode": "copy" if stream.publish_path else stream.processing_mode,
             "preparation_engine": stream.preparation_engine,
             "output_profile": "nvdec-native25" if self.nvdec_compatibility else "source",
+            "playback_controls": self.playback_controls,
+            "playback": stream.playback.snapshot() if stream.playback else None,
             "status": stream.status,
             "started_at": stream.started_at,
             "uptime_seconds": (

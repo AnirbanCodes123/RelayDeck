@@ -44,6 +44,7 @@ let toastTimer;
 let gpuDefaultApplied = false;
 let metricsInFlight = false;
 let streamCapacity = 110;
+const playbackRequests = new Set();
 const METRIC_HISTORY = 40;
 const metricHistory = { cpu: [], ram: [], gpu: [], edgeCpu: [], edgeRam: [], edgeGpu: [] };
 
@@ -162,6 +163,40 @@ function configureVlcLink(node, stream) {
   link.addEventListener("click", (event) => {
     if (!playable) event.preventDefault();
   });
+}
+
+function configurePlaybackControls(node, stream) {
+  const pause = node.querySelector(".playback-pause");
+  const forward = node.querySelector(".playback-forward");
+  const paused = stream.playback?.paused || stream.playback?.pause_pending;
+  const enabled = stream.playback_controls && stream.playback &&
+    ["live", "starting"].includes(stream.status) && !playbackRequests.has(stream.id);
+  pause.textContent = paused ? "Resume" : "Pause";
+  pause.classList.toggle("is-paused", Boolean(paused));
+  pause.disabled = forward.disabled = !enabled;
+  pause.title = `${paused ? "Resume" : "Pause"} this feed for every viewer, including edge_agent and VLC`;
+  forward.title = "Skip the source ahead 10 seconds for every viewer (keyframe aligned)";
+  pause.setAttribute("aria-label", `${paused ? "Resume" : "Pause"} ${stream.stream_name} for all viewers`);
+  forward.setAttribute("aria-label", `Skip ${stream.stream_name} ahead 10 seconds for all viewers`);
+  pause.addEventListener("click", () => playbackAction(stream, paused ? "resume" : "pause"));
+  forward.addEventListener("click", () => playbackAction(stream, "forward"));
+}
+
+async function playbackAction(stream, action) {
+  if (playbackRequests.has(stream.id)) return;
+  playbackRequests.add(stream.id);
+  renderStreams();
+  try {
+    const result = await apiAction(`/api/streams/${encodeURIComponent(stream.id)}/playback/${action}`);
+    streams = streams.map((item) => item.id === stream.id ? result : item);
+    const message = action === "forward" ? "Skip ahead requested" : action === "pause" ? "Pause requested" : "Playback resumed";
+    notify(`${message} for all viewers of ${stream.stream_name}.`);
+  } catch (error) {
+    notify(error.message, true);
+  } finally {
+    playbackRequests.delete(stream.id);
+    renderStreams();
+  }
 }
 
 async function copyText(value) {
@@ -354,6 +389,7 @@ function renderStreams() {
     node.querySelector(".source-cell small").textContent = `/${stream.stream_name}`;
     node.querySelector(".endpoint-cell code").textContent = stream.rtsp_url;
     configureVlcLink(node, stream);
+    configurePlaybackControls(node, stream);
     const mode = node.querySelector(".mode-badge");
     mode.textContent = stream.processing_mode;
     mode.classList.toggle(
@@ -371,7 +407,8 @@ function renderStreams() {
     device.classList.toggle("nvidia", onGpu);
     device.classList.toggle("cpu", !onGpu && !copied);
     device.classList.toggle("copy", copied);
-    node.querySelector(".state-badge b").textContent = stream.status;
+    node.querySelector(".state-badge b").textContent = stream.playback?.paused ? "paused"
+      : stream.playback?.pause_pending ? "pausing" : stream.status;
     node.querySelector(".uptime-cell").textContent = formatUptime(stream.uptime_seconds);
     const active = ["preparing", "starting", "live", "stopping"].includes(stream.status);
     const toggle = node.querySelector(".stream-toggle");
@@ -400,9 +437,11 @@ function renderLiveUrls() {
   for (const stream of live) {
     const node = liveUrlTemplate.content.firstElementChild.cloneNode(true);
     node.querySelector("strong").textContent = stream.filename;
-    node.querySelector("small").textContent = stream.status;
+    node.querySelector("small").textContent = stream.playback?.paused ? "paused"
+      : stream.playback?.pause_pending ? "pausing" : stream.status;
     node.querySelector("code").textContent = stream.rtsp_url;
     configureVlcLink(node, stream);
+    configurePlaybackControls(node, stream);
     node.querySelector(".copy-stream").addEventListener("click", async () => {
       if (await copyText(stream.rtsp_url)) notify("RTSP URL copied.");
       else notify("Could not copy the RTSP URL.", true);

@@ -1,4 +1,5 @@
 from pathlib import Path
+from unittest.mock import MagicMock
 
 import pytest
 
@@ -127,3 +128,26 @@ def test_public_rtsp_urls_use_request_host_or_override(
             assert other["streams"][0]["rtsp_url"] == "rtsp://10.0.0.9:8554/mcl1"
             assert client.get("/api/streams/one").json()["rtsp_url"] == expected_url
         assert main.manager.mediamtx_host == "127.0.0.1"
+
+
+@pytest.mark.parametrize("action", ["pause", "resume", "forward"])
+def test_playback_routes_control_shared_stream_and_preserve_public_url(monkeypatch, tmp_path, action):
+    configure_test_runtime(monkeypatch, tmp_path)
+    main.manager.public_host = ""
+    state = main.manager.register("one", tmp_path / "one.mp4", "one.mp4", "camera1", True, "copy")
+    control = MagicMock(return_value=state)
+    monkeypatch.setattr(main.manager, "playback_action", control)
+    with TestClient(main.app, base_url="http://192.168.29.20:9009") as client:
+        response = client.post(f"/api/streams/one/playback/{action}")
+    assert response.status_code == 200
+    assert response.json()["rtsp_url"] == "rtsp://192.168.29.20:8554/camera1"
+    control.assert_called_once_with("one", action)
+
+
+def test_playback_rejects_stopped_missing_and_invalid_controls(monkeypatch, tmp_path):
+    configure_test_runtime(monkeypatch, tmp_path)
+    main.manager.register("one", tmp_path / "one.mp4", "one.mp4", "camera1", True, "copy")
+    with TestClient(main.app) as client:
+        assert client.post("/api/streams/one/playback/pause").status_code == 409
+        assert client.post("/api/streams/missing/playback/pause").status_code == 404
+        assert client.post("/api/streams/one/playback/invalid").status_code == 422

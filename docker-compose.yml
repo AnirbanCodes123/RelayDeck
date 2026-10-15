@@ -32,6 +32,7 @@ services:
       DATA_DIR: /app/data
       MAX_STREAMS: "110"
       PREPARE_VIDEOS: "1"
+      PLAYBACK_CONTROLS: ${PLAYBACK_CONTROLS:-1}
       NVDEC_COMPATIBILITY: ${NVDEC_COMPATIBILITY:-1}
       EDGE_AGENT_PORT: "9000"
       HOST_PROC: /host/proc

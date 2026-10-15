@@ -180,13 +180,13 @@ reader may still be allocating frames for the previous 1280×720 output. No edge
 configuration changes are required. `GET /api/streams` reports
 `output_profile: "nvdec-native25"` when the server profile is active.
 
-macOS Compose defaults to `NVDEC_COMPATIBILITY=0`. Set
+With shared controls disabled, macOS Compose defaults to `NVDEC_COMPATIBILITY=0`. Set
 `NVDEC_COMPATIBILITY=0` in `.env` to use the standard copy/preparation policy
 below on Ubuntu too. Both profiles retain source resolution for even-sized
 inputs. Native `uvicorn` startup also
 defaults to `0`; export `NVDEC_COMPATIBILITY=1` to enable the profile there.
 
-With compatibility mode disabled, RelayDeck probes every upload:
+With both compatibility mode and shared controls disabled, RelayDeck probes every upload:
 
 - 8-bit 4:2:0 H.264 video without B-frames, with even dimensions and AAC or no
   audio uses FFmpeg stream-copy, including sources
@@ -238,6 +238,35 @@ queue to finish before assessing the final number of live streams.
 - **Start all** and **Stop all** control the complete registry.
 - A failed FFmpeg process is isolated; other streams continue running.
 
+### Shared playback controls
+
+Each stream has **Pause / Resume** and **+10s** buttons beside its URL in both
+UI views. These control the server's source playhead, so every RTSP reader of
+that URL—including VLC and edge_agent—receives the same paused image or jump.
+Other streams keep playing. Clients display the change after their own buffers
+drain; their visible response times can differ.
+
+Pause takes effect at the next independent keyframe (normally within one
+second), then periodically sends that frame with advancing RTSP timestamps and
+silent audio. Readers stay connected even during a long pause. Resume continues
+from there. **+10s** seeks to a nearby keyframe ten seconds ahead; it also works
+while paused. Looping videos wrap at the end, and non-looping videos clamp to
+the final keyframe interval. VLC's own controls still affect only that VLC
+viewer; use RelayDeck's controls to change the shared feed.
+
+`PLAYBACK_CONTROLS=1` is enabled by default. It requires cached preparation and
+the native-resolution 25 fps compatibility encoding, even when
+`PREPARE_VIDEOS=0` or `NVDEC_COMPATIBILITY=0`. Prepared H.264 video packets are
+paced and remuxed using PyAV, without a continuously running video encoder.
+Sources with audio use AAC encoding in the publisher to maintain valid RTSP
+audio headers and silence during pause. Original video dimensions and URLs are
+preserved. Pause state and source position reset when a stream or the server
+restarts.
+
+Set `PLAYBACK_CONTROLS=0` to use the previous direct FFmpeg publishing path;
+the controls will be disabled. Rebuild the portal image after updating, since
+the packet-pacing implementation adds the PyAV dependency.
+
 ## Local development
 
 Start MediaMTX separately on port `8554`, then:
@@ -258,6 +287,9 @@ uvicorn app.main:app --reload --port 9009
 - `NVDEC_COMPATIBILITY` (Ubuntu Compose: `1`, macOS/native: `0`): prepare every
   source as H.264 Baseline at its original resolution and 25 fps for CUDA readers. With `PREPARE_VIDEOS=0`,
   this profile requires continuous transcoding instead of cached preparation.
+- `PLAYBACK_CONTROLS` (`1`): enable shared Pause/Resume and +10s controls. This
+  requires cached native-resolution compatibility preparation and overrides
+  `PREPARE_VIDEOS=0` and `NVDEC_COMPATIBILITY=0`. Set to `0` to disable controls.
 - `MEDIAMTX_HOST` (`127.0.0.1`): MediaMTX hostname used by FFmpeg.
 - `MEDIAMTX_RTSP_PORT` (`8554`): MediaMTX RTSP port.
 - `RTSP_PUBLIC_HOST` (unset): use the hostname/IP from the RelayDeck request
@@ -316,6 +348,9 @@ does not configure DNS for Docker builds.
 - `GET /api/streams/{id}`: stream details and recent FFmpeg messages.
 - `POST /api/streams/{id}/start`: start one publisher.
 - `POST /api/streams/{id}/stop`: stop one publisher.
+- `POST /api/streams/{id}/playback/pause`: freeze the shared source feed.
+- `POST /api/streams/{id}/playback/resume`: resume the shared source feed.
+- `POST /api/streams/{id}/playback/forward`: skip the shared source ahead 10s.
 - `DELETE /api/streams/{id}`: delete one stream and its upload.
 - `POST /api/streams/actions/start-all`: start every configured stream.
 - `POST /api/streams/actions/stop-all`: stop every publisher.
