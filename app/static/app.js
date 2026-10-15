@@ -154,11 +154,11 @@ function configureVlcLink(node, stream) {
   link.setAttribute("aria-disabled", String(!playable));
   link.tabIndex = playable ? 0 : -1;
   link.title = playable
-    ? "Open in VLC on this computer (VLC must be the default RTSP app)"
+    ? "Open a VLC window on this computer (requires the RelayDeck VLC handler)"
     : "Start this stream to open it in VLC";
-  if (playable) link.href = stream.rtsp_url;
-  // Keep the real RTSP URL and the user click so the browser can hand it
-  // directly to the OS protocol handler. Never launch VLC on the server.
+  if (playable) link.href = `relaydeck-vlc://play?url=${encodeURIComponent(stream.rtsp_url)}`;
+  // A dedicated desktop handler selects VLC explicitly, regardless of the
+  // default RTSP application. The user click preserves external-app activation.
   link.addEventListener("click", (event) => {
     if (!playable) event.preventDefault();
   });

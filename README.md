@@ -74,18 +74,25 @@ the running-URLs tab to open that exact RTSP feed in VLC. VLC opens on the
 computer running the browser. The browser may ask permission to open the
 external application. Stopped streams must be started before using this button.
 
-On an Ubuntu desktop with VLC installed, register VLC as the default RTSP
-application once, as your desktop user (without `sudo`):
+On the **Ubuntu desktop running the browser**, install the dedicated VLC
+handler once, as your desktop user (**without `sudo`**, outside Docker):
 
 ```bash
-xdg-mime default vlc.desktop x-scheme-handler/rtsp
-xdg-mime query default x-scheme-handler/rtsp
+python3 scripts/vlc_launcher.py --install
 ```
 
-For a Snap or Flatpak installation, use that installation's VLC desktop-file
-ID instead of `vlc.desktop` (for example, `vlc_vlc.desktop` or
-`org.videolan.VLC.desktop`). If your browser blocks external-app launches,
-allow the launch prompt or copy the URL into VLC's **Open Network Stream**.
+VLC must already be installed. The handler supports native, Snap, and Flatpak
+VLC installations and registers `relaydeck-vlc:` specifically for RelayDeck.
+Clicking **▶ VLC** then explicitly launches a new VLC window over RTSP/TCP,
+regardless of the desktop's default RTSP player. The installed launcher persists
+in your user data directory and does not depend on the checkout staying put.
+
+The browser can still display an external-application permission prompt.
+Choose **Open VLC** and enable the remember/always-allow option if the browser
+offers it. A website cannot bypass that browser permission. This setup is
+needed on each browser computer, not on a remote/headless RelayDeck server.
+The dedicated installer currently supports Ubuntu/Linux desktops only.
+You can still copy an ordinary RTSP URL into VLC's **Open Network Stream**.
 
 MediaMTX is configured for RTSP-over-TCP only. This prevents RTP packet loss
 and visible H.264 slice corruption in VLC when many streams are active. If VLC
