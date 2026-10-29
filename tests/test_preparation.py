@@ -1,6 +1,7 @@
 import json
 import shutil
 import subprocess
+import struct
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
@@ -157,6 +158,7 @@ def test_gpu_preparation_failure_falls_back_once_and_cache_survives_restart(tmp_
         return process
 
     with patch("app.streamer.probe_processing_mode", return_value="transcode"), \
+         patch("app.streamer.usable_audio_indices", return_value=()), \
          patch("app.streamer.subprocess.Popen", side_effect=spawn), \
          patch.object(manager, "start"):
         manager._prepare_video("one", token)
@@ -220,6 +222,68 @@ def test_preparation_does_not_use_a_realtime_loop(tmp_path):
     assert "-movflags" in command
 
 
+@pytest.mark.skipif(not shutil.which("ffmpeg"), reason="FFmpeg is required")
+@pytest.mark.parametrize("phantom_audio", [False, True])
+@pytest.mark.parametrize("prepare", [False, True])
+def test_dvr_avi_skips_unknown_audio_and_preserves_valid_audio(tmp_path, phantom_audio, prepare):
+    from app.streamer import probe_streams
+
+    source = tmp_path / "dvr.avi"
+    subprocess.run([
+        "ffmpeg", "-v", "error", "-f", "lavfi", "-i",
+        "testsrc2=size=160x96:rate=25", "-f", "lavfi", "-i",
+        "sine=sample_rate=8000", "-t", "0.4", "-c:v", "libx264",
+        "-bf", "0", "-c:a", "pcm_s16le", str(source),
+    ], capture_output=True, check=True, timeout=15)
+    if phantom_audio:
+        data = bytearray(source.read_bytes())
+        audio_header = data.index(b"auds")
+        audio_format = data.index(b"strf", audio_header) + 8
+        # Match the WCL DVR's invalid scale and unknown (zero) audio codec tag.
+        struct.pack_into("<I", data, audio_header + 20, 0)
+        struct.pack_into("<H", data, audio_format, 0)
+        source.write_bytes(data)
+        assert not probe_streams(source)[1].get("codec_name")
+
+    manager = StreamManager(prepare_videos=prepare)
+    manager.register("dvr", source, source.name, "dvr", False, "cpu")
+    stream = manager._streams["dvr"]
+    if prepare:
+        token = object()
+        stream.preparation_token = token
+        stream.status = "preparing"
+        with patch.object(manager, "start"):
+            manager._prepare_video("dvr", token)
+        assert stream.publish_path is not None, stream.error
+        output = stream.publish_path
+    else:
+        output = tmp_path / "live-output.mp4"
+        popen = subprocess.Popen
+
+        def publish_to_file(command, **kwargs):
+            if command[0] != "ffmpeg":
+                return popen(command, **kwargs)
+            command = command[:command.index("-avoid_negative_ts")]
+            return popen(command + [str(output)], **kwargs)
+
+        with patch("app.streamer.subprocess.Popen", side_effect=publish_to_file):
+            manager.start("dvr")
+        process = stream.process
+        assert process.wait(timeout=15) == 0, manager.get("dvr")
+    streams = probe_streams(output)
+    assert streams[0]["codec_name"] == "h264"
+    assert (streams[0]["width"], streams[0]["height"]) == (160, 96)
+    audio = [s for s in streams if s["codec_type"] == "audio"]
+    assert len(audio) == (0 if phantom_audio else 1)
+    if audio:
+        assert audio[0]["codec_name"] == "aac"
+    decoded = subprocess.run([
+        "ffmpeg", "-v", "error", "-xerror", "-i", str(output),
+        "-f", "null", "-",
+    ], capture_output=True, timeout=15)
+    assert decoded.returncode == 0, decoded.stderr
+
+
 def test_stop_terminates_running_preparation_and_removes_partial_file(tmp_path):
     import threading
     manager, stream, token = preparing(tmp_path, mode="cpu")
@@ -241,6 +305,7 @@ def test_stop_terminates_running_preparation_and_removes_partial_file(tmp_path):
         return process
 
     with patch("app.streamer.probe_processing_mode", return_value="transcode"), \
+         patch("app.streamer.usable_audio_indices", return_value=()), \
          patch("app.streamer.subprocess.Popen", side_effect=spawn):
         worker = threading.Thread(target=manager._prepare_video, args=("one", token))
         worker.start()

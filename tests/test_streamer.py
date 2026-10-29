@@ -142,8 +142,9 @@ def test_stream_processes_have_independent_lifecycles(
     manager.register(
         "two", tmp_path / "two.mov", "two.mov", "camera2", False, "transcode"
     )
-    manager.start("one")
-    manager.start("two")
+    with patch("app.streamer.usable_audio_indices", return_value=()):
+        manager.start("one")
+        manager.start("two")
 
     assert manager.aggregate()["starting"] == 2
     assert "-c:v" in popen.call_args_list[0].args[0]
@@ -165,7 +166,8 @@ def test_live_transcoding_repairs_saved_incompatible_copy_mode(popen, _which, _p
     popen.return_value.poll.return_value = None
     manager = StreamManager(prepare_videos=False)
     manager.register("one", tmp_path / "high444.mp4", "high444.mp4", "one", True, "copy")
-    manager.start("one")
+    with patch("app.streamer.usable_audio_indices", return_value=()):
+        manager.start("one")
     command = popen.call_args.args[0]
     assert command[command.index("-c:v") + 1] == "libx264"
     assert command[command.index("-pix_fmt") + 1] == "yuv420p"

@@ -148,8 +148,7 @@ def resolve_processing_mode(media_mode: str, requested_engine: str) -> str:
     return "cpu"
 
 
-def probe_processing_mode(video_path: Path) -> str:
-    """Copy only 8-bit 4:2:0 H.264/AAC that common RTSP decoders support."""
+def probe_streams(video_path: Path) -> list[dict[str, Any]]:
     try:
         result = subprocess.run(
             [
@@ -157,7 +156,7 @@ def probe_processing_mode(video_path: Path) -> str:
                 "-v",
                 "error",
                 "-show_entries",
-                "stream=codec_type,codec_name,pix_fmt,width,height,has_b_frames",
+                "stream=index,codec_type,codec_name,pix_fmt,width,height,has_b_frames,sample_rate,channels",
                 "-of",
                 "json",
                 str(video_path),
@@ -168,10 +167,26 @@ def probe_processing_mode(video_path: Path) -> str:
             check=True,
             stdin=subprocess.DEVNULL,
         )
-        streams = json.loads(result.stdout).get("streams", [])
+        return json.loads(result.stdout).get("streams", [])
     except (OSError, subprocess.SubprocessError, json.JSONDecodeError) as exc:
         raise RuntimeError(f"Could not inspect the uploaded video: {exc}") from exc
 
+
+def usable_audio_indices(video_path: Path) -> tuple[int, ...]:
+    # Some DVR AVI exports declare a phantom audio stream with codec ID zero.
+    # Optional mapping (0:a?) still selects it and fails before encoding video.
+    return tuple(
+        stream["index"] for stream in probe_streams(video_path)
+        if stream.get("codec_type") == "audio"
+        and stream.get("codec_name") not in {None, "unknown", "none"}
+        and int(stream.get("sample_rate") or 0) > 0
+        and int(stream.get("channels") or 0) > 0
+    )
+
+
+def probe_processing_mode(video_path: Path) -> str:
+    """Copy only 8-bit 4:2:0 H.264/AAC that common RTSP decoders support."""
+    streams = probe_streams(video_path)
     video_streams = [
         stream
         for stream in streams
@@ -226,6 +241,7 @@ class ManagedStream:
     preparation_engine: str | None = None
     preparation_token: object | None = field(default=None, repr=False)
     playback: Playback | None = field(default=None, repr=False)
+    audio_indices: tuple[int, ...] | None = field(default=None, repr=False)
 
 
 class StreamManager:
@@ -337,6 +353,8 @@ class StreamManager:
             if not self.prepare_videos and stream.processing_mode == "copy":
                 if self.nvdec_compatibility or probe_processing_mode(stream.video_path) != "copy":
                     stream.processing_mode = "cpu"
+            if not stream.publish_path:
+                stream.audio_indices = usable_audio_indices(stream.video_path)
             command = self._build_command(stream)
             stream.logs.clear()
             stream.error = None
@@ -396,6 +414,7 @@ class StreamManager:
                     if not ready.is_file():
                         temporary = ready.with_name(f"{ready.stem}-{id(token)}.tmp.mp4")
                         engines = ["nvidia", "cpu"] if stream.processing_mode == "nvidia" else ["cpu"]
+                        stream.audio_indices = usable_audio_indices(stream.video_path)
                         for engine in engines:
                             command = self._build_prepare_command(stream, engine, temporary)
                             with self._lock:
@@ -480,9 +499,12 @@ class StreamManager:
             "pipe:0" if controlled else str(stream.publish_path or stream.video_path),
             "-map",
             "0:v:0",
-            "-map",
-            "0:a?",
         ]
+        if stream.publish_path or stream.audio_indices is None:
+            command += ["-map", "0:a?"]
+        else:
+            for index in stream.audio_indices:
+                command += ["-map", f"0:{index}"]
         mode = "copy" if stream.publish_path else stream.processing_mode
         if mode != "copy":
             if self.nvdec_compatibility:

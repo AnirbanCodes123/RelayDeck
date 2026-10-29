@@ -202,6 +202,8 @@ With both compatibility mode and shared controls disabled, RelayDeck probes ever
   cached H.264/AAC MP4, then published using stream-copy. AVI sources also go
   through preparation to repair unreliable timestamps. The UI shows `preparing`
   until a file is ready; pending streams are not counted as live.
+  DVR exports with unknown audio codecs or missing audio parameters skip those
+  unusable tracks so their video can still stream; valid audio is retained.
 - H.264 with B-frames, 10-bit, 4:2:2, or 4:4:4 pixels is also prepared as 8-bit YUV420
   for RTSP player compatibility. Saved copy-mode streams are checked again on
   startup. Prepared videos use closed GOPs with keyframes at least every two
